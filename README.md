@@ -5,7 +5,7 @@ DepositDesk is a specialized, functional prototype designed to streamline and mo
 
 ---
 
-## 🌟 Key Capabilities & Features
+## Key Capabilities & Features
 
 ### 1. Multi-Dimensional Status Model
 Unlike traditional flat status models, DepositDesk separates lifecycle into 5 orthogonal dimensions:
@@ -32,7 +32,7 @@ Unlike traditional flat status models, DepositDesk separates lifecycle into 5 or
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 DepositDesk/
@@ -55,7 +55,7 @@ DepositDesk/
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Node.js (v20+ or v22+)
@@ -84,7 +84,7 @@ Open **[http://localhost:5173](http://localhost:5173)** in your browser.
 
 ---
 
-## 👥 Demo Logins & Instant Role Switching
+## Demo Logins & Instant Role Switching
 
 The application comes with an instant 1-click role switcher in the top banner and on the login page:
 
@@ -99,5 +99,5 @@ The application comes with an instant 1-click role switcher in the top banner an
 
 ---
 
-## 📄 License & Disclaimer
+## License & Disclaimer
 This is a prototype demonstration developed for AICTE Problem Statement ID 26265. It is not an official AICTE system and does not replace applicable regulatory procedures or competent authority decisions.
