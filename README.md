@@ -27,10 +27,10 @@ Generate a local session secret and put it in `.env` as `SESSION_SECRET`; never 
 node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
 ```
 
-The workspace commands load the root `.env`. Existing process environment variables take precedence. The example connects development to localhost:5432/depositdesk and tests to localhost:5433/depositdesk_test.
+The workspace commands load the root `.env`. Existing process environment variables take precedence. The example connects development to localhost:5434/depositdesk and tests to localhost:5433/depositdesk_test. Both Docker ports bind only to 127.0.0.1. Development uses 5434 to avoid an existing local PostgreSQL service on 5432.
 
 ```powershell
-docker compose up -d db db-test
+docker compose up -d --wait db db-test
 npm.cmd run db:generate
 npm.cmd run db:migrate
 npm.cmd run db:seed
@@ -39,7 +39,7 @@ npm.cmd run dev
 
 Open http://localhost:5173. The API listens on http://localhost:4000 and the frontend proxies `/api` to it. A fresh database is required for initial migration deployment. Do not apply these migrations blindly to a populated database created outside the migration history; back up and plan a baseline first.
 
-Seeding creates synthetic institutions and seven accounts, prints a different generated password for each account once, and refuses production execution. `DEMO_PASSWORD` may be supplied locally before seeding; there is no committed/default password. Rerunning seed rotates passwords and refreshes demo data. Use reset only for disposable local demo data.
+Seeding creates eight synthetic institutions, 30 instruments (including three replacement records) and seven accounts, prints a different generated password for each account once, and refuses production execution. `DEMO_PASSWORD` may be supplied locally before seeding; there is no committed/default password. The seed refuses a nonempty instrument database before changing credentials. Use reset only for disposable local demo data. Seed dates use the current calendar date in Asia/Kolkata.
 
 | Role | Seeded email |
 | --- | --- |

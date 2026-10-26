@@ -48,11 +48,19 @@ P0 means required for a reliable MVP. P1 here means subsequent delivery order, n
 
 ## Runtime baseline
 
+This subsection records the initial inspection. The Step 2 follow-up below supersedes its environment blockers.
+
 - Initial Git working tree was clean; no AGENTS.md was found in the repository or its immediate parent.
 - `npm ci --no-audit --no-fund` was attempted. It failed with npm's `Exit handler never called!`; dependency installation is incomplete.
 - `npm run verify` was attempted and stopped at lint because `eslint` was unavailable. Typecheck, tests and build did not run through this command. Missing lint configuration is an additional source-confirmed setup gap.
 - Docker CLI is available, but `docker info` cannot connect to the Docker Desktop Linux engine. No listening PostgreSQL service was found on ports 5432/5433.
 - Database migration, seed, session and end-to-end behavior remain unverified. No claim of a passing build, test suite or successful workflow is made.
+
+### Step 2 follow-up validation
+
+Docker is now available. Fresh migrations and seed were exercised successfully. Development uses loopback port 5434 because an existing host PostgreSQL service owns 5432; test data remains separate on port 5433. The corrected seed produces 8 institutions, 30 instruments, 7 accounts and 4 release requests with India-calendar-relative dates. A second seed refuses populated instrument data before modifying credentials.
+
+`npm run verify` passes (24 tests, lint, type checks and production build), and `npm run test:integration` passes all 5 PostgreSQL authentication/isolation/audit tests. Two real seeded institution accounts also passed session restoration, scoped lists, denied cross-institution access and logout in a development-database smoke check. Step 2's foundation is verified; the broader module/acceptance gaps above still require their subsequent slices.
 
 ## Ordered implementation steps
 

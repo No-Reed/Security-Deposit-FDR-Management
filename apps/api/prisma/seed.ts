@@ -12,6 +12,7 @@
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import { randomBytes } from 'crypto';
+import { todayInTz } from '../src/lib/dates';
 
 const prisma = new PrismaClient();
 
@@ -27,7 +28,7 @@ function randomPassword(): string {
 
 // Date helpers — relative to today so scenarios stay valid
 function today(): Date {
-  return new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z');
+  return todayInTz('Asia/Kolkata');
 }
 
 function addDays(d: Date, days: number): Date {
@@ -46,6 +47,9 @@ function nextRef(prefix: string): string {
 }
 
 async function main() {
+  if (await prisma.instrument.count() > 0) {
+    throw new Error('Seed requires an empty demo database. Use the explicitly confirmed local demo reset command to rebuild it.');
+  }
   console.log('\n🌱 DepositDesk Demo Seed Starting...\n');
   console.log('⚠️  DEMO DATA — All institutions, banks, and instruments are synthetic.\n');
 
@@ -294,6 +298,8 @@ async function main() {
     { key: 'i23', institutionKey: 'western', type: 'SECURITY_DEPOSIT', amount: '450000.00', issueOffset: 200, maturityOffset: 165, lifecycleStatus: 'VERIFIED', bankIdx: 2 },
     { key: 'i24', institutionKey: 'eastern', type: 'FDR', amount: '325000.00', issueOffset: 250, maturityOffset: 115, lifecycleStatus: 'VERIFIED', bankIdx: 3 },
     { key: 'i25', institutionKey: 'sunrise', type: 'FDR', amount: '850000.00', issueOffset: 300, maturityOffset: 65, lifecycleStatus: 'VERIFIED', bankIdx: 4 },
+    { key: 'i26', institutionKey: 'sunrise', type: 'FDR', amount: '150000.00', issueOffset: 1, maturityOffset: 364, lifecycleStatus: 'DRAFT', bankIdx: 0 },
+    { key: 'i27', institutionKey: 'coastal', type: 'FDR', amount: '225000.00', issueOffset: 1, maturityOffset: 364, lifecycleStatus: 'DRAFT', bankIdx: 1 },
   ];
 
   const instruments: Record<string, any> = {};

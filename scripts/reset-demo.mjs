@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 if (existsSync(`${root}/.env`)) process.loadEnvFile(`${root}/.env`);
-const target = new URL(process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/depositdesk');
+const target = new URL(process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5434/depositdesk');
 if (process.env.NODE_ENV === 'production' || !['localhost', '127.0.0.1'].includes(target.hostname)
   || target.pathname !== '/depositdesk') {
   throw new Error('Reset is restricted to the local depositdesk demo database outside production.');

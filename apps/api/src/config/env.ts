@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
-  DATABASE_URL: z.string().url().default('postgresql://postgres:postgres@localhost:5432/depositdesk'),
+  DATABASE_URL: z.string().url().default('postgresql://postgres:postgres@localhost:5434/depositdesk'),
   SESSION_SECRET: z.string().default('depositdesk-super-secret-key-at-least-64-characters-long-for-security-production-and-dev'),
   APP_BASE_URL: z.string().url().default('http://localhost:5173'),
   API_BASE_URL: z.string().url().default('http://localhost:4000/api/v1'),

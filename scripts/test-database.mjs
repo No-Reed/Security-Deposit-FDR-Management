@@ -7,7 +7,7 @@ if (existsSync(`${root}/.env`)) process.loadEnvFile(`${root}/.env`);
 const raw = process.env.DATABASE_URL_TEST;
 if (!raw) throw new Error('DATABASE_URL_TEST is required for integration tests.');
 const target = new URL(raw);
-const development = new URL(process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/depositdesk');
+const development = new URL(process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5434/depositdesk');
 if (process.env.NODE_ENV === 'production' || !['postgres:', 'postgresql:'].includes(target.protocol)
   || !['localhost', '127.0.0.1'].includes(target.hostname)
   || target.pathname !== '/depositdesk_test'

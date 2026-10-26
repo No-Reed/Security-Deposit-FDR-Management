@@ -5,7 +5,7 @@
 The completion checkmarks below are inherited implementation claims, not verified acceptance results. Step 1 source audit found incomplete UI/API contracts, silent sample-data/success fallbacks, missing migrations, a session-storage mismatch and authorization/workflow gaps. See [IMPLEMENTATION_AUDIT.md](IMPLEMENTATION_AUDIT.md) for evidence, the acceptance baseline and the ordered delivery plan.
 
 - [x] Step 1: read revised brief, inspect existing implementation and record gaps.
-- [ ] Step 2: establish a reproducible database/session/auth and verification foundation.
+- [x] Step 2: establish a reproducible database/session/auth and verification foundation.
 - [ ] Steps 3-5: complete submission/scrutiny, maturity/renewal and release/audit workflows.
 - [ ] Step 6: apply the supplied UI reference and complete required navigation.
 - [ ] Step 7: run and document all acceptance scenarios and improvement measurements.
@@ -27,7 +27,20 @@ Implemented:
 
 Validation: final `npm run verify` passed: Prisma client generation, lint, all workspace type checks, 24 unit/API boundary tests, and shared/API/frontend production builds. Local API tests required permission to use loopback networking in the Codex execution environment.
 
-Database verification remains blocked: Docker Desktop crashed during startup because it could not access its local `dockerInference` file. `npm run test:integration` could not reach/reset the isolated database. Migrations, seed and persistent login/isolation/audit tests must run against PostgreSQL before Step 2 is accepted as complete. No Docker internal files were modified and no development data was reset. Later workflow/UI gaps remain as listed in the audit; their legacy completion claims below remain unverified.
+Initial database verification was blocked by Docker Desktop startup. This was resolved when the user opened Docker Desktop; no Docker internal files were modified.
+
+### Step 2 database validation completed - 27 October 2026
+
+- Both migrations applied successfully to fresh development and isolated test databases.
+- An existing host PostgreSQL service owns port 5432. This project's development database now uses 127.0.0.1:5434; tests use 127.0.0.1:5433. Existing host database data and settings were not changed.
+- Compose has database health checks and waits for readiness; database ports bind only to loopback.
+- Seed verified with 8 institutions, 30 instruments (including 3 replacements), 7 accounts and 4 release requests. Seed calendar dates now use Asia/Kolkata, and seeding refuses a nonempty instrument database before rotating credentials.
+- Local `.env` and generated demo credentials in `tmp/demo-seed-output.txt` are ignored by Git. Only the disposable demo database created in this session was rebuilt to validate the corrected seed.
+- `npm run verify` passed again: lint, type checks, 24 unit/API boundary tests and production builds.
+- `npm run test:integration` passed: 5 real PostgreSQL tests for persistent login/logout, CSRF, lockout, disabled accounts, institution isolation, immutable audit history and transaction rollback.
+- A separate smoke check using two generated demo accounts passed login/session restoration, scoped lists, denied cross-institution detail access and logout against the seeded development database.
+
+Step 2 is complete for the foundation scope. The application still has the workflow/UI gaps listed in the audit; inherited completion claims below are not evidence that the whole MVP passes. Next is Step 3: complete FDR submission, documents, correction/resubmission and scrutiny with real API responses and no silent fallback success.
 
 ## Status Legend
 - ✅ Done
