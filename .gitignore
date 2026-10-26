@@ -1,0 +1,67 @@
+# Dependency directories
+node_modules/
+.pnp
+.pnp.js
+
+# Production and build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+.eslintcache
+
+# Environment variables and secrets (preserve example files)
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+
+# Local file uploads & document storage
+private-uploads/
+uploads/
+storage/
+apps/api/private-uploads/
+apps/api/uploads/
+
+# Database files & local volume mounts
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+pgdata/
+pgdata_test/
+
+# Testing and coverage reports
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime and temporary directories
+tmp/
+temp/
+.temp/
+
+# IDE, Editor, and OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Agent and tool artifacts
+.gemini/

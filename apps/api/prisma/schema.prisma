@@ -1,0 +1,400 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  INSTITUTION_USER
+  SCRUTINY_OFFICER
+  APPROVING_AUTHORITY
+  SYSTEM_ADMIN
+}
+
+enum LifecycleStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  ACTION_REQUIRED
+  RESUBMITTED
+  VERIFIED
+  REJECTED
+  CLOSED
+}
+
+enum IndependentVerificationStatus {
+  NOT_CHECKED
+  PENDING
+  CONFIRMED_BY_AUTHORIZED_SOURCE
+  DISCREPANCY_FOUND
+  UNAVAILABLE
+  DEMO_SIMULATED
+}
+
+enum DocumentReviewStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETE
+  REQUIRES_RESUBMISSION
+}
+
+enum DiscrepancySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum DiscrepancyStatus {
+  OPEN
+  RESPONDED
+  RESOLVED
+  DISMISSED
+}
+
+enum DocumentCategory {
+  FDR_COPY
+  DEPOSIT_CONFIRMATION
+  BANK_COMMUNICATION
+  RENEWAL_DOCUMENT
+  INSTITUTION_AUTHORIZATION
+  RELEASE_SUPPORTING
+  OTHER
+}
+
+enum InstrumentType {
+  FDR
+  SECURITY_DEPOSIT
+  OTHER
+}
+
+enum ReleaseRequestStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  RETURNED_FOR_INFORMATION
+  RESUBMITTED
+  PENDING_AUTHORITY_DECISION
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum NotificationDeliveryChannel {
+  IN_APP
+  EMAIL
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id               String    @id @default(cuid())
+  name             String
+  email            String    @unique
+  passwordHash     String
+  role             Role
+  isActive         Boolean   @default(true)
+  institutionId    String?
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  lastLoginAt      DateTime?
+
+  institution      Institution?          @relation(fields: [institutionId], references: [id])
+  staffScopes      StaffInstitutionScope[]
+  sessions         Session[]
+  submittedInstruments Instrument[]     @relation("SubmittedBy")
+  verifications    Verification[]
+  discrepanciesAssigned Discrepancy[]   @relation("AssignedTo")
+  discrepanciesResolved Discrepancy[]   @relation("ResolvedBy")
+  releaseRequestsSubmitted ReleaseRequest[] @relation("SubmittedBy")
+  releaseRequestsReviewed  ReleaseRequest[] @relation("ReviewedBy")
+  releaseRequestsDecided   ReleaseRequest[] @relation("DecidedBy")
+  releaseRequestsCompleted ReleaseRequest[] @relation("CompletedBy")
+  uploadedDocuments Document[]
+  notifications    Notification[]
+  auditEvents      AuditEvent[]
+  snapshots        InstrumentSubmissionSnapshot[]
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ipSummary String?
+  uaSummary String?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Institution {
+  id              String    @id @default(cuid())
+  aicteId         String?   @unique
+  name            String
+  institutionType String
+  address         String
+  state           String
+  contactName     String
+  contactEmail    String
+  contactPhone    String?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  users            User[]
+  staffScopes      StaffInstitutionScope[]
+  instruments      Instrument[]
+  releaseRequests  ReleaseRequest[]
+  notifications    Notification[]
+}
+
+model StaffInstitutionScope {
+  id            String   @id @default(cuid())
+  userId        String
+  institutionId String
+  createdAt     DateTime @default(now())
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, institutionId])
+}
+
+model Instrument {
+  id                    String          @id @default(cuid())
+  referenceCode         String          @unique
+  institutionId         String
+  instrumentType        InstrumentType
+  instrumentNumber      String
+  bankName              String
+  bankBranch            String
+  amount                Decimal         @db.Decimal(15, 2)
+  currency              String          @default("INR")
+  issueDate             DateTime        @db.Date
+  maturityDate          DateTime        @db.Date
+  validityEndDate       DateTime?       @db.Date
+  purpose               String
+  beneficiaryDetails    String?
+  lifecycleStatus       LifecycleStatus @default(DRAFT)
+  submittedAt           DateTime?
+  submittedById         String?
+  predecessorInstrumentId String?       @unique
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  version               Int             @default(1)
+
+  institution           Institution     @relation(fields: [institutionId], references: [id])
+  submittedBy           User?           @relation("SubmittedBy", fields: [submittedById], references: [id])
+  predecessor           Instrument?     @relation("RenewalChain", fields: [predecessorInstrumentId], references: [id])
+  successor             Instrument?     @relation("RenewalChain")
+  verifications         Verification[]
+  discrepancies         Discrepancy[]
+  documents             Document[]
+  releaseRequests       ReleaseRequest[]
+  snapshots             InstrumentSubmissionSnapshot[]
+
+  @@index([institutionId])
+  @@index([lifecycleStatus])
+  @@index([bankName, instrumentNumber])
+  @@index([maturityDate])
+}
+
+model InstrumentSubmissionSnapshot {
+  id            String   @id @default(cuid())
+  instrumentId  String
+  submittedById String
+  submittedAt   DateTime @default(now())
+  payload       Json
+
+  instrument    Instrument @relation(fields: [instrumentId], references: [id])
+  submittedBy   User       @relation(fields: [submittedById], references: [id])
+
+  @@index([instrumentId])
+}
+
+model Verification {
+  id                           String                       @id @default(cuid())
+  instrumentId                 String
+  documentReviewStatus         DocumentReviewStatus         @default(NOT_STARTED)
+  independentVerificationStatus IndependentVerificationStatus @default(NOT_CHECKED)
+  sourceType                   String?
+  sourceName                   String?
+  referenceNumber              String?
+  result                       String?
+  notes                        String?
+  verifiedById                 String?
+  verifiedAt                   DateTime?
+  createdAt                    DateTime                     @default(now())
+
+  instrument   Instrument @relation(fields: [instrumentId], references: [id])
+  verifiedBy   User?      @relation(fields: [verifiedById], references: [id])
+
+  @@index([instrumentId])
+}
+
+model Discrepancy {
+  id              String            @id @default(cuid())
+  instrumentId    String
+  releaseRequestId String?
+  code            String
+  severity        DiscrepancySeverity
+  description     String
+  reason          String
+  status          DiscrepancyStatus @default(OPEN)
+  detectedAt      DateTime          @default(now())
+  assignedToId    String?
+  resolvedById    String?
+  resolvedAt      DateTime?
+  resolutionNotes String?
+  history         Json              @default("[]")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  instrument      Instrument     @relation(fields: [instrumentId], references: [id])
+  releaseRequest  ReleaseRequest? @relation(fields: [releaseRequestId], references: [id])
+  assignedTo      User?          @relation("AssignedTo", fields: [assignedToId], references: [id])
+  resolvedBy      User?          @relation("ResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([instrumentId])
+  @@index([status])
+}
+
+model Document {
+  id               String          @id @default(cuid())
+  instrumentId     String?
+  releaseRequestId String?
+  category         DocumentCategory
+  originalFilename String
+  storageKey       String          @unique
+  mimeType         String
+  sizeBytes        Int
+  sha256           String
+  uploadedById     String
+  uploadedAt       DateTime        @default(now())
+  version          Int             @default(1)
+  isSuperseded     Boolean         @default(false)
+
+  instrument       Instrument?     @relation(fields: [instrumentId], references: [id])
+  releaseRequest   ReleaseRequest? @relation(fields: [releaseRequestId], references: [id])
+  uploadedBy       User            @relation(fields: [uploadedById], references: [id])
+
+  @@index([instrumentId])
+  @@index([releaseRequestId])
+}
+
+model ReleaseRequest {
+  id                  String               @id @default(cuid())
+  referenceCode       String               @unique
+  instrumentId        String
+  institutionId       String
+  requestType         String
+  reason              String
+  status              ReleaseRequestStatus @default(DRAFT)
+  submittedById       String
+  submittedAt         DateTime?
+  checklistSnapshot   Json                 @default("[]")
+  scrutinyNotes       String?
+  reviewedById        String?
+  reviewedAt          DateTime?
+  returnReason        String?
+  decisionById        String?
+  decisionAt          DateTime?
+  decisionReason      String?
+  completedById       String?
+  completedAt         DateTime?
+  completionReference String?
+  version             Int                  @default(1)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  history             Json                 @default("[]")
+
+  instrument          Instrument           @relation(fields: [instrumentId], references: [id])
+  institution         Institution          @relation(fields: [institutionId], references: [id])
+  submittedBy         User                 @relation("SubmittedBy", fields: [submittedById], references: [id])
+  reviewedBy          User?                @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  decidedBy           User?                @relation("DecidedBy", fields: [decisionById], references: [id])
+  completedBy         User?                @relation("CompletedBy", fields: [completedById], references: [id])
+  documents           Document[]
+  discrepancies       Discrepancy[]
+
+  // Partial unique index enforced via migration SQL (one open request per instrument)
+  @@index([instrumentId])
+  @@index([status])
+}
+
+model ReleaseChecklistItem {
+  id        String   @id @default(cuid())
+  label     String
+  isRequired Boolean @default(true)
+  sortOrder Int
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id                 String                     @id @default(cuid())
+  recipientUserId    String
+  institutionId      String?
+  type               String
+  title              String
+  message            String
+  relatedEntityType  String?
+  relatedEntityId    String?
+  dueAt              DateTime?
+  readAt             DateTime?
+  deliveryChannel    NotificationDeliveryChannel @default(IN_APP)
+  deliveryStatus     NotificationDeliveryStatus  @default(PENDING)
+  errorDetails       String?
+  dedupeKey          String                     @unique
+  createdAt          DateTime                   @default(now())
+  sentAt             DateTime?
+
+  recipient          User                       @relation(fields: [recipientUserId], references: [id])
+  institution        Institution?               @relation(fields: [institutionId], references: [id])
+
+  @@index([recipientUserId])
+  @@index([readAt])
+}
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  actorUserId   String?
+  actorRole     String?
+  action        String
+  entityType    String
+  entityId      String?
+  timestamp     DateTime @default(now())
+  requestId     String?
+  changedFields Json?
+  reason        String?
+  metadata      Json?
+
+  actor         User?    @relation(fields: [actorUserId], references: [id])
+
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([timestamp])
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
