@@ -25,6 +25,11 @@ export const apiClient = axios.create({
 
 let csrfToken: string | null = null;
 
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) return error.response?.data?.error?.message || fallback;
+  return fallback;
+}
+
 export function setCsrfToken(token: string | null) {
   csrfToken = token;
   if (token) {
@@ -257,6 +262,10 @@ export interface AuditEventItem {
 export const api = {
   // Auth
   auth: {
+    environment: async (): Promise<{ demo: boolean }> => {
+      const res = await apiClient.get('/health');
+      return res.data;
+    },
     login: async (email: string, password: string) => {
       const res = await apiClient.post('/auth/login', { email, password });
       if (res.data.csrfToken) setCsrfToken(res.data.csrfToken);

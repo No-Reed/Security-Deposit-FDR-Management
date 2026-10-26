@@ -1,103 +1,105 @@
-# DepositDesk — Security Deposit & FDR Lifecycle Management
-> **AICTE Problem Statement ID 26265 · Prototype MVP**
+# DepositDesk - Security Deposit & FDR Management
 
-DepositDesk is a specialized, functional prototype designed to streamline and modernize the regulatory lifecycle of security deposits and Fixed Deposit Receipts (FDRs) associated with AICTE approval-related processes.
+Prototype for AICTE problem statement **26265**. This is not an official AICTE service. No live bank verification, payment, bank instruction or real-world release is performed.
 
----
+## Implementation status
 
-## Key Capabilities & Features
+This repository contains useful UI/API foundations, but the complete administrative lifecycle is still under repair. The original completion claims were not supported by end-to-end tests. Read [IMPLEMENTATION_AUDIT.md](IMPLEMENTATION_AUDIT.md) and [PROGRESS.md](PROGRESS.md) for the remaining work.
 
-### 1. Multi-Dimensional Status Model
-Unlike traditional flat status models, DepositDesk separates lifecycle into 5 orthogonal dimensions:
-- **Lifecycle Status**: `DRAFT` → `SUBMITTED` → `UNDER_REVIEW` → `ACTION_REQUIRED` → `RESUBMITTED` → `VERIFIED` / `REJECTED` / `CLOSED`
-- **Date Status**: `ACTIVE`, `EXPIRING_SOON` (≤90 days alert threshold), `MATURED`, `EXPIRED`
-- **Independent Verification Status**: `NOT_CHECKED`, `PENDING`, `CONFIRMED_BY_AUTHORIZED_SOURCE`, `DISCREPANCY_FOUND`, `DEMO_SIMULATED`
-- **Renewal Status**: `NONE`, `REQUIRED`, `IN_PROGRESS`, `COMPLETED` (with linked renewal chains)
-- **Release Status**: `NONE`, `OPEN`, `APPROVED`, `COMPLETED`, `REJECTED`
+The foundation slice adds compatible Postgres session storage, migrations, CUID request validation, real credential-based login, a scoped institution-filter fix, database integrity controls and repeatable checks. Operational screens still contain legacy sample-data/success fallbacks and API contract gaps; those will be removed in the next slices. Do not treat those screens as evidence that a record was saved or independently verified.
 
-### 2. Four-Role RBAC & Maker-Checker Governance
-- **Institution User (IU)**: Registers deposits, uploads FDR scans, tracks maturities, submits release requests.
-- **Scrutiny Officer (SO)**: First-line checker; examines FDR scans, records official bank verification letters, flags deficiencies.
-- **Approving Authority (AA)**: Competent regional officer; executes maker-checker second-signoff, approves or rejects release/refund orders.
-- **System Administrator (SA)**: Configures reminder thresholds (90/60/30/15/7/1 days), checklist parameters, user accounts, and triggers on-demand maturity audits.
+## Requirements
 
-### 3. Rigorous Security & Audit Hardening
-- **Argon2id Hashing**: Password hashing with dummy verification to mitigate timing attacks.
-- **Session & CSRF Protection**: Postgres-backed HTTP-only sessions with `x-csrf-token` header enforcement.
-- **Account Lockout**: 5 failed login attempts trigger an automatic 15-minute lockout.
-- **Magic Byte Validation**: Uploaded documents are verified by file header magic bytes (`file-type`), not spoofable filename extensions.
-- **Cryptographic Integrity**: Every uploaded document generates a tamper-evident SHA-256 hash.
-- **Immutable Audit Trail**: Audit events are recorded in the same database transaction as business operations; update/delete operations are strictly forbidden.
-- **Formula Injection Neutralization**: All CSV reports prepend special characters (`=`, `+`, `-`, `@`) with single quotes to protect spreadsheet users.
+- Node.js 22.15 or later in the Node 22 line (or a newer supported Node release).
+- npm 10+.
+- PostgreSQL 16. Docker Desktop with a working Linux engine is the provided local option.
 
----
+## Local setup (PowerShell, repository root)
 
-## Architecture
-
-```
-DepositDesk/
-├── apps/
-│   ├── web/                     # React 18, Vite, Tailwind CSS, Notion-inspired UI
-│   │   ├── src/
-│   │   │   ├── components/      # StatCard, StatusBadge, Modal, AppLayout
-│   │   │   ├── context/         # AuthContext & Demo Role Switcher
-│   │   │   ├── lib/             # Axios API client & typed interfaces
-│   │   │   └── pages/           # Dashboard, Registry, Detail, Scrutiny, Release, Reports, Admin
-│   └── api/                     # Node.js, Express, TypeScript, Prisma ORM
-│       ├── src/
-│       │   ├── modules/         # Auth, Instruments, Verification, Discrepancies, Release, Audit
-│       │   ├── jobs/            # Scheduled & On-Demand Maturity Check Job
-│       │   ├── middleware/      # CSRF, RBAC, Rate-Limit, Error Handler
-│       │   └── config/          # Environment & Prisma client
-└── packages/
-    └── shared/                  # Monorepo shared Zod schemas & TypeScript domain types
+```powershell
+npm.cmd ci
+Copy-Item .env.example .env
 ```
 
----
+Generate a local session secret and put it in `.env` as `SESSION_SECRET`; never commit it:
 
-## Getting Started
-
-### Prerequisites
-- Node.js (v20+ or v22+)
-- npm (v10+ or v11+)
-- Docker (optional for local PostgreSQL)
-
-### 1. Installation
-Install dependencies across all workspaces:
-```bash
-npm install
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
 ```
 
-### 2. Build & Typecheck
-Build all packages (`@depositdesk/shared`, `@depositdesk/api`, `@depositdesk/web`):
-```bash
-npm run build
-npm run typecheck
+The workspace commands load the root `.env`. Existing process environment variables take precedence. The example connects development to localhost:5432/depositdesk and tests to localhost:5433/depositdesk_test.
+
+```powershell
+docker compose up -d db db-test
+npm.cmd run db:generate
+npm.cmd run db:migrate
+npm.cmd run db:seed
+npm.cmd run dev
 ```
 
-### 3. Run the Development Server
-Start the frontend web application:
-```bash
-npm run dev -w apps/web
+Open http://localhost:5173. The API listens on http://localhost:4000 and the frontend proxies `/api` to it. A fresh database is required for initial migration deployment. Do not apply these migrations blindly to a populated database created outside the migration history; back up and plan a baseline first.
+
+Seeding creates synthetic institutions and seven accounts, prints a different generated password for each account once, and refuses production execution. `DEMO_PASSWORD` may be supplied locally before seeding; there is no committed/default password. Rerunning seed rotates passwords and refreshes demo data. Use reset only for disposable local demo data.
+
+| Role | Seeded email |
+| --- | --- |
+| Institution A | vikram@sunrise.invalid |
+| Institution B | meera@coastal.invalid |
+| Institution C | sanjay@hillside.invalid |
+| Scrutiny Officer | officer.priya@depositdesk.invalid |
+| Scrutiny Officer | officer.rahul@depositdesk.invalid |
+| Approving Authority | authority.anita@depositdesk.invalid |
+| System Administrator | admin@depositdesk.invalid |
+
+Sign in with an email above and its password from the seed output. To change roles, sign out and sign in to a different account. Browser-selected roles cannot authenticate users. A failed login does not grant offline access.
+
+## Verification
+
+```powershell
+npm.cmd run verify
 ```
-Open **[http://localhost:5173](http://localhost:5173)** in your browser.
 
----
+This generates Prisma's client, lints all workspaces, builds shared types, checks TypeScript, runs unit tests, and builds API/frontend production output. Prisma's first generation needs access to its runtime download host. Passing this command does not imply database tests or the entire MVP pass.
 
-## Demo Logins & Instant Role Switching
+For real database-backed authentication tests, first start `db-test` above and configure `DATABASE_URL_TEST` in root `.env`:
 
-The application comes with an instant 1-click role switcher in the top banner and on the login page:
+```powershell
+npm.cmd run test:integration
+```
 
-| Role | Demo Email | Role Description |
-| :--- | :--- | :--- |
-| **Institution User (IU)** | `iu@demo.aicte.gov.in` | Dr. Ramesh Sharma (Registrar) |
-| **Scrutiny Officer (SO)** | `so@demo.aicte.gov.in` | Ananya Verma (First-line Scrutiny) |
-| **Approving Authority (AA)** | `aa@demo.aicte.gov.in` | Prof. K. S. Sundaram (Regional Officer) |
-| **System Admin (SA)** | `admin@demo.aicte.gov.in` | Vikram Mehta (AICTE HQ Admin) |
+This command **resets only a separate local database named depositdesk_test**, deploys migrations and runs API tests. It refuses production, nonlocal targets, other database names and a matching development database. It never resets the development database. Current integration coverage exercises persistent login, CSRF/logout, lockout, account disabling, institution listing/ID access and audit integrity. Later slices add full workflow tests.
 
-*Default demo password: `DemoPassword123!` (or click any 1-click instant login button).*
+Unit tests include date-status precedence, midnight IST boundaries, CUID validation, submission validation, renewal/release helpers and CSV formula neutralization. Integration tests are intentionally excluded from the unit command and must be reported separately.
 
----
+To build and run compiled output:
 
-## License & Disclaimer
-This is a prototype demonstration developed for AICTE Problem Statement ID 26265. It is not an official AICTE system and does not replace applicable regulatory procedures or competent authority decisions.
+```powershell
+npm.cmd run build
+npm.cmd run start -w apps/api
+```
+
+`start` runs the API; host `apps/web/dist` through an appropriately configured web server for deployment. Production requires `NODE_ENV=production`, `DEMO_MODE=false`, a non-placeholder session secret of at least 64 characters, HTTPS and deployment-specific database/storage configuration. Production readiness is not claimed.
+
+## Reset disposable local demo data
+
+```powershell
+npm.cmd run db:reset -- --confirm-local-demo-reset
+```
+
+This deletes and recreates only the local database named depositdesk outside production, then seeds it. It is never required for normal application startup. The explicit flag acknowledges data deletion; remote and production targets are refused.
+
+## Foundation behavior and limitations
+
+- Sessions use connect-pg-simple's `sid`, `sess` and `expire` columns and are saved before login succeeds. Cookies are HTTP-only, SameSite=Lax, and Secure in production. Mutations require a CSRF token.
+- Passwords use Argon2id; repeated failed attempts lock the account temporarily. Session identity is reloaded from the database so disabled users lose access.
+- Prisma-generated CUIDs are validated consistently in shared request schemas.
+- Database migrations enforce one open release request, positive instrument amounts, issue/maturity ordering, document parent presence and append-only audit events. Normal app credentials must not own schema/DDL privileges in deployment.
+- Some later workflow audit/authorization checks remain incomplete; a database trigger alone does not make the product secure or compliant.
+- Reports, detail contracts, release UI, renewal UI, saved reminder settings and UI redesign remain scheduled. Real bank/AICTE integration, email delivery, scanning integration, PDF reports and object storage deployment are not implemented.
+- The intended UI follows the supplied case-management reference: light surfaces, orange accents, sidebar navigation, compact filtered tables, status badges and tabbed detail/timeline panels.
+
+## Troubleshooting
+
+If Docker cannot connect, first confirm Docker Desktop's Linux engine is running. A Docker Desktop startup failure prevents database-backed checks; do not replace failed API calls with simulated successes. If installation or Prisma generation cannot download dependencies, restore network access and rerun the command. Never report blocked database tests as passed.
+
+Database backup/retention, least-privilege deployment roles, authorized verification access and validated AICTE policy remain deployment/domain-expert responsibilities. Current checklist content is demo policy, not an assertion of applicable regulation.

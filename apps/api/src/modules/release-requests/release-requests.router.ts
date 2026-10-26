@@ -39,7 +39,7 @@ releaseRequestsRouter.get('/', async (req: Request, res: Response, next: NextFun
     const skip = (page - 1) * pageSize;
     const { role, institutionId } = authReq.user;
 
-    let where: any = {};
+    const where: any = {};
     if (role === Role.INSTITUTION_USER) {
       if (!institutionId) return res.json(paginate([], 0, page, pageSize));
       where.institutionId = institutionId;

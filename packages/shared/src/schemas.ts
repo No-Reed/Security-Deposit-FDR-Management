@@ -38,7 +38,7 @@ export const UpdateInstitutionSchema = CreateInstitutionSchema.partial().extend(
 
 // ─── Instrument ──────────────────────────────────────────────────────────────
 export const CreateInstrumentBaseSchema = z.object({
-  institutionId: z.string().uuid(),
+  institutionId: z.string().cuid(),
   instrumentType: z.nativeEnum(InstrumentType),
   instrumentNumber: z.string().min(1).max(255),
   bankName: z.string().min(1).max(255),
@@ -64,8 +64,8 @@ export const UpdateInstrumentSchema = CreateInstrumentBaseSchema.partial().omit(
 
 // ─── Document ─────────────────────────────────────────────────────────────────
 export const DocumentUploadMetaSchema = z.object({
-  instrumentId: z.string().uuid().optional(),
-  releaseRequestId: z.string().uuid().optional(),
+  instrumentId: z.string().cuid().optional(),
+  releaseRequestId: z.string().cuid().optional(),
   category: z.nativeEnum(DocumentCategory),
 });
 
@@ -90,8 +90,8 @@ export const RecordVerificationSchema = z.object({
 
 // ─── Discrepancy ──────────────────────────────────────────────────────────────
 export const CreateDiscrepancySchema = z.object({
-  instrumentId: z.string().uuid(),
-  releaseRequestId: z.string().uuid().optional(),
+  instrumentId: z.string().cuid(),
+  releaseRequestId: z.string().cuid().optional(),
   code: z.string().min(1).max(100),
   severity: z.nativeEnum(DiscrepancySeverity),
   description: z.string().min(1).max(1000),
@@ -105,7 +105,7 @@ export const ResolveDiscrepancySchema = z.object({
 
 // ─── Release Request ─────────────────────────────────────────────────────────
 export const CreateReleaseRequestSchema = z.object({
-  instrumentId: z.string().uuid(),
+  instrumentId: z.string().cuid(),
   requestType: z.string().min(1).max(100),
   reason: z.string().min(1).max(2000),
 });
@@ -128,7 +128,7 @@ export const CreateUserSchema = z.object({
   name: z.string().min(2).max(255),
   email: z.string().email(),
   role: z.nativeEnum(Role),
-  institutionId: z.string().uuid().optional().nullable(),
+  institutionId: z.string().cuid().optional().nullable(),
 });
 
 export const UpdateUserSchema = CreateUserSchema.partial().extend({
@@ -151,7 +151,7 @@ export const PaginationSchema = z.object({
 // ─── Instrument Filters ───────────────────────────────────────────────────────
 export const InstrumentFiltersSchema = PaginationSchema.extend({
   search: z.string().optional(),
-  institutionId: z.string().uuid().optional(),
+  institutionId: z.string().cuid().optional(),
   lifecycleStatus: z.string().optional(),
   instrumentType: z.string().optional(),
   bankName: z.string().optional(),
@@ -166,7 +166,7 @@ export const InstrumentFiltersSchema = PaginationSchema.extend({
 
 // ─── Renewal ──────────────────────────────────────────────────────────────────
 export const CreateRenewalSchema = CreateInstrumentBaseSchema.extend({
-  predecessorInstrumentId: z.string().uuid(),
+  predecessorInstrumentId: z.string().cuid(),
 }).refine(
   (data) => new Date(data.issueDate) <= new Date(data.maturityDate),
   { message: 'Issue date cannot be after maturity date', path: ['issueDate'] }

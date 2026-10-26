@@ -54,7 +54,7 @@ export function createApp() {
     cors({
       origin: config.APP_BASE_URL,
       credentials: true,
-      methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'x-csrf-token', 'x-request-id'],
     })
   );
@@ -93,6 +93,7 @@ export function createApp() {
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
+    message: { error: { code: 'RATE_LIMITED', message: 'Too many requests. Try again later.' } },
   });
   app.use(globalLimiter);
 

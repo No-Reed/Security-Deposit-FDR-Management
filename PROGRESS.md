@@ -1,5 +1,34 @@
 # DepositDesk — PROGRESS.md
 
+## Current reassessment - 27 October 2026
+
+The completion checkmarks below are inherited implementation claims, not verified acceptance results. Step 1 source audit found incomplete UI/API contracts, silent sample-data/success fallbacks, missing migrations, a session-storage mismatch and authorization/workflow gaps. See [IMPLEMENTATION_AUDIT.md](IMPLEMENTATION_AUDIT.md) for evidence, the acceptance baseline and the ordered delivery plan.
+
+- [x] Step 1: read revised brief, inspect existing implementation and record gaps.
+- [ ] Step 2: establish a reproducible database/session/auth and verification foundation.
+- [ ] Steps 3-5: complete submission/scrutiny, maturity/renewal and release/audit workflows.
+- [ ] Step 6: apply the supplied UI reference and complete required navigation.
+- [ ] Step 7: run and document all acceptance scenarios and improvement measurements.
+
+Baseline: dependency installation failed with npm's `Exit handler never called!`; `npm run verify` stopped because eslint was unavailable. Docker's Linux engine is not running. Database-backed behavior, tests and production build are not yet verified in this checkout. No application code changed during the assessment.
+
+### Step 2 foundation checkpoint - branch `codex/depositdesk-foundation`
+
+Implemented:
+- Recovered locked dependency installation and Prisma client generation; added ESLint configuration and working workspace verification scripts.
+- Added initial PostgreSQL migrations, connect-pg-simple-compatible session columns, an append-only audit trigger and basic database integrity constraints.
+- Aligned shared identifier validation with existing Prisma CUIDs.
+- Removed client-created demo identities and hardcoded login passwords; login now requires a successful API response. Logout failures are visible.
+- Persisted sessions before login responses, fixed async authentication error handling, used real Argon2 dummy verification and transactional lockout/audit updates.
+- Narrowed institution filters within authorized scope rather than replacing it; tightened the CSRF login exemption.
+- Added isolated test-database/reset runners, corrected test DB port, and documented setup and generated seed accounts.
+- Fixed API runtime interoperability with the ESM-only file-type dependency.
+- Added API boundary tests, shared validation tests and deterministic IST date-boundary tests; added separate database-backed auth/isolation/audit tests.
+
+Validation: final `npm run verify` passed: Prisma client generation, lint, all workspace type checks, 24 unit/API boundary tests, and shared/API/frontend production builds. Local API tests required permission to use loopback networking in the Codex execution environment.
+
+Database verification remains blocked: Docker Desktop crashed during startup because it could not access its local `dockerInference` file. `npm run test:integration` could not reach/reset the isolated database. Migrations, seed and persistent login/isolation/audit tests must run against PostgreSQL before Step 2 is accepted as complete. No Docker internal files were modified and no development data was reset. Later workflow/UI gaps remain as listed in the audit; their legacy completion claims below remain unverified.
+
 ## Status Legend
 - ✅ Done
 - 🔄 In Progress

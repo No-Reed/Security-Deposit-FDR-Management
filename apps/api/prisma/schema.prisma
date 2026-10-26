@@ -114,7 +114,6 @@ model User {
 
   institution      Institution?          @relation(fields: [institutionId], references: [id])
   staffScopes      StaffInstitutionScope[]
-  sessions         Session[]
   submittedInstruments Instrument[]     @relation("SubmittedBy")
   verifications    Verification[]
   discrepanciesAssigned Discrepancy[]   @relation("AssignedTo")
@@ -130,16 +129,12 @@ model User {
 }
 
 model Session {
-  id        String   @id
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  ipSummary String?
-  uaSummary String?
+  // connect-pg-simple stores the user identifier inside sess.
+  sid       String   @id @db.VarChar
+  sess      Json     @db.Json
+  expire    DateTime @db.Timestamp(6)
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
+  @@index([expire])
 }
 
 model Institution {

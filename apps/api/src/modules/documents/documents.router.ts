@@ -3,7 +3,6 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { fileTypeFromBuffer } from 'file-type';
 import { Role, DocumentCategory } from '@depositdesk/shared';
 import { prisma } from '../../config/prisma';
 import { config } from '../../config/env';
@@ -57,6 +56,7 @@ documentsRouter.post('/upload', upload.single('file'), async (req: Request, res:
     }
 
     // Validate file type via magic bytes
+    const { fileTypeFromBuffer } = await import('file-type');
     const fileTypeResult = await fileTypeFromBuffer(req.file.buffer);
     if (!fileTypeResult || !ALLOWED_MIMES.has(fileTypeResult.mime)) {
       return next(createError(422, 'INVALID_FILE_TYPE', 'File type not allowed. Only PDF, JPG, PNG are accepted.'));

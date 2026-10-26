@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Role } from '@depositdesk/shared';
 import { useAuth } from '../../context/AuthContext';
-import { api, NotificationItem } from '../../lib/api';
+import { api, NotificationItem, getApiErrorMessage } from '../../lib/api';
 import {
   LayoutDashboard,
   FileSpreadsheet,
@@ -27,7 +27,14 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
-  const { user, logout, switchDemoRole } = useAuth();
+  const { user, logout, isDemoMode } = useAuth();
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const handleLogout = async () => {
+    setSessionError(null);
+    try { await logout(); } catch (error) {
+      setSessionError(getApiErrorMessage(error, 'Could not sign out. Please try again.'));
+    }
+  };
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -100,38 +107,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-[#fafafa] flex flex-col font-sans">
-      {/* Top Demo Banner with Instant Role Switcher */}
-      <div className="bg-slate-900 text-slate-100 px-4 py-2 flex flex-wrap items-center justify-between text-xs border-b border-slate-800 z-40 sticky top-0">
-        <div className="flex items-center gap-2">
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span className="font-semibold text-slate-200">DepositDesk Prototype</span>
-          <span className="text-slate-400 hidden sm:inline">· AICTE Security Deposit & FDR Management</span>
-        </div>
-
-        {/* Quick Role Switcher Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-          <span className="text-slate-400 font-medium mr-1 hidden md:inline">Quick Role:</span>
-          {(Object.keys(roleLabels) as Role[]).map((r) => {
-            const isActive = user?.role === r;
-            return (
-              <button
-                key={r}
-                onClick={() => switchDemoRole(r)}
-                className={`px-2 py-0.5 rounded text-2xs font-medium transition-all ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-                }`}
-              >
-                {roleLabels[r].badge} : {roleLabels[r].title}
-              </button>
-            );
-          })}
-        </div>
+      <div className="bg-slate-900 text-slate-100 px-4 py-2 text-xs sticky top-0 z-40">
+        {isDemoMode ? 'Demo environment — synthetic data' : 'DepositDesk workspace'}
       </div>
+      {sessionError && <p role="alert" className="bg-red-50 text-red-800 p-3 text-sm">{sessionError}</p>}
 
       {/* Main Layout Container */}
       <div className="flex flex-1">
@@ -199,7 +178,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 </div>
               </div>
               <button
-                onClick={logout}
+                onClick={handleLogout}
                 title="Sign out"
                 className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-slate-200/50 rounded-md transition-colors"
               >
@@ -223,7 +202,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
             <div className="flex items-center gap-3">
               {/* Quick FDR Creation Button (for IU & SA) */}
-              {(user?.role === Role.INSTITUTION_USER || user?.role === Role.SYSTEM_ADMIN) && (
+              {(user?.role === Role.INSTITUTION_USER) && (
                 <button
                   onClick={() => navigate('/instruments/new')}
                   className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-sm"

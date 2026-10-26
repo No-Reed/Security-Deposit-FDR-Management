@@ -15,7 +15,7 @@ instrumentsRouter.use(requireAuth as any);
 // Build where clause based on role/scope
 async function buildInstrumentWhere(authReq: AuthenticatedRequest, filters: any) {
   const { role, institutionId } = authReq.user;
-  let where: any = {};
+  const where: any = {};
 
   if (role === Role.INSTITUTION_USER) {
     if (!institutionId) return null;
@@ -30,7 +30,10 @@ async function buildInstrumentWhere(authReq: AuthenticatedRequest, filters: any)
   // SA: no institution filter
 
   // Apply filters
-  if (filters.institutionId) where.institutionId = filters.institutionId;
+  if (filters.institutionId) {
+    // Narrow the authorized scope; never replace it with client input.
+    where.AND = [{ institutionId: filters.institutionId }];
+  }
   if (filters.lifecycleStatus) where.lifecycleStatus = filters.lifecycleStatus;
   if (filters.instrumentType) where.instrumentType = filters.instrumentType;
   if (filters.bankName) where.bankName = { contains: filters.bankName, mode: 'insensitive' };
