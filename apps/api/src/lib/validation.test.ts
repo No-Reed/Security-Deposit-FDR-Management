@@ -15,7 +15,7 @@ describe('Database identifier and submission validation', () => {
   });
   it('rejects fabricated identifiers, zero/negative amounts and reversed dates', () => {
     for (const changes of [
-      { institutionId: 'demo-inst-1' }, { amount: '0' }, { amount: '-1' },
+      { institutionId: 'demo-inst-1' }, { amount: '0' }, { amount: '-1' }, { issueDate: '2026-02-30' }, { amount: '99999999999999.99' },
       { issueDate: '2028-01-01' },
     ]) expect(CreateInstrumentSchema.safeParse({ ...draft, ...changes }).success).toBe(false);
   });

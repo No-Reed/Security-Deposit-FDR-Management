@@ -21,6 +21,8 @@ This is a source inspection, not certification that the application works. No bu
 
 ## Confirmed gaps, ordered by impact
 
+This table is the initial audit baseline. Completed slices are recorded in follow-up sections below and in PROGRESS.md; unresolved rows remain subsequent work.
+
 | Priority | Finding and source | Required correction |
 | --- | --- | --- |
 | P0 | `AuthContext.tsx` hardcodes demo mode, invents a logged-in user after any failed session request and accepts matching demo profiles after login failures. Pages also convert failed writes into local success. | Enforce real sessions. A 401/403/validation/server failure must remain a failure. Remove silent sample-data and simulated-success fallbacks from operational flows. |
@@ -61,6 +63,14 @@ This subsection records the initial inspection. The Step 2 follow-up below super
 Docker is now available. Fresh migrations and seed were exercised successfully. Development uses loopback port 5434 because an existing host PostgreSQL service owns 5432; test data remains separate on port 5433. The corrected seed produces 8 institutions, 30 instruments, 7 accounts and 4 release requests with India-calendar-relative dates. A second seed refuses populated instrument data before modifying credentials.
 
 `npm run verify` passes (24 tests, lint, type checks and production build), and `npm run test:integration` passes all 5 PostgreSQL authentication/isolation/audit tests. Two real seeded institution accounts also passed session restoration, scoped lists, denied cross-institution access and logout in a development-database smoke check. Step 2's foundation is verified; the broader module/acceptance gaps above still require their subsequent slices.
+
+### Step 3 follow-up validation
+
+Submission, correction and scrutiny are now real database-backed workflows. The registry, creation/edit form, detail, scrutiny queue and discrepancy list no longer fabricate data or successful mutations on request failure. Instrument/document response contracts match the screens. Private streamed uploads validate extension/MIME/signature, parent access and record versions; earlier evidence remains available after explicit supersession. Complete snapshots preserve submitted business values and evidence references.
+
+Server controls now enforce officer pickup, current-submission review outcomes, unresolved discrepancy blocking, institution response without self-resolution, terminal rejection, versioned mutations and honest demo verification. Related evidence/review/discrepancy audit events appear in the authorized record timeline. Browser checks cover login, inline date validation, real draft save and provenance display; PostgreSQL tests cover the complete correction-to-verification cycle and unauthorized/stale/invalid requests. Standard verification and database test results are recorded in PROGRESS.md.
+
+The global audit/report scope gaps, dashboard/maturity/reminder configuration, renewal and release UI, remaining administration and composed visual redesign still require their planned steps. The registry currently derives date filtering across the scoped prototype dataset before pagination; scaling that calculation into database queries is future work.
 
 ## Ordered implementation steps
 

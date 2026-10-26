@@ -6,7 +6,9 @@ The completion checkmarks below are inherited implementation claims, not verifie
 
 - [x] Step 1: read revised brief, inspect existing implementation and record gaps.
 - [x] Step 2: establish a reproducible database/session/auth and verification foundation.
-- [ ] Steps 3-5: complete submission/scrutiny, maturity/renewal and release/audit workflows.
+- [x] Step 3: complete submission, documents, correction/resubmission and scrutiny.
+- [ ] Step 4: complete maturity monitoring and renewal/replacement workflows.
+- [ ] Step 5: complete release/refund, remaining audit scope controls and reporting.
 - [ ] Step 6: apply the supplied UI reference and complete required navigation.
 - [ ] Step 7: run and document all acceptance scenarios and improvement measurements.
 
@@ -41,6 +43,20 @@ Initial database verification was blocked by Docker Desktop startup. This was re
 - A separate smoke check using two generated demo accounts passed login/session restoration, scoped lists, denied cross-institution detail access and logout against the seeded development database.
 
 Step 2 is complete for the foundation scope. The application still has the workflow/UI gaps listed in the audit; inherited completion claims below are not evidence that the whole MVP passes. Next is Step 3: complete FDR submission, documents, correction/resubmission and scrutiny with real API responses and no silent fallback success.
+
+### Step 3 submission and scrutiny checkpoint - 27 October 2026
+
+- Registry, new/edit form, detail, scrutiny queue and discrepancies use real scoped API data. Empty responses clear results and failed writes remain errors. Login opens the working registry; dashboard and later modules remain scheduled.
+- Shared validation rejects invalid calendar dates, nonpositive/oversized amounts, unsupported currency and arbitrary sorting fields. Edits require versions, validate merged fields and preserve omitted validity dates. Stale/concurrent writes conflict rather than overwrite.
+- Evidence streams to private disk with extension/MIME/signature checks, parent/version/role/state authorization, failed-file cleanup and SHA-256 hashes. Replacements supersede metadata while retaining earlier files. Downloads reauthorize parents, hide storage keys and create audit events. Storage/scanner boundaries exist; scanning is unconfigured and labelled not scanned.
+- Submission/resubmission capture all business values and evidence IDs/hashes/versions. Submission retries do not duplicate snapshots. Officers pick up submissions before recording outcomes. Flagging a discrepancy requests correction; institutions can respond but cannot resolve their own discrepancies.
+- Completing scrutiny requires an outcome for the current submission, a completed document review, a reason and no unresolved discrepancies. Prior outcomes cannot cover corrected submissions. Demo evidence cannot claim authorized-source confirmation. Review, independent verification and lifecycle remain distinct.
+- Detail supports edits, evidence replacement, discrepancy response/resolution, resubmission, review/rejection, original snapshots and a timeline including related evidence/review/discrepancy events. Rejected records stay terminal; a corrected-copy action creates a separate record.
+- Notification response/routes and failure handling were reconciled so the shared layout no longer displays fabricated notifications.
+- Browser check: seeded institution login, inline reversed-date validation, corrected draft save and inspection of the three provenance blocks passed. Full correction/review and denial scenarios use PostgreSQL API tests.
+- All 10 database tests passed (5 foundation plus 5 submission tests with multiple workflow/security assertions). Final `npm run verify` passed: Prisma generation, lint, all type checks, 24 standard tests and production builds. Final `npm run test:integration` passed all 10 database tests. A Windows Prisma DLL lock was resolved by stopping the development server; README documents the requirement.
+
+Remaining: Step 4 dashboard/maturity/renewal contracts and saved reminder settings; Step 5 full release UI, scoped global audit/reports and administrative completion; Step 6 composed UI redesign and responsive/accessibility polish; Step 7 full acceptance demonstration and measurements. Older slice checkmarks below are inherited claims.
 
 ## Status Legend
 - ✅ Done

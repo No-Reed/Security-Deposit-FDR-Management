@@ -15,7 +15,7 @@ if (process.env.NODE_ENV === 'production' || !['postgres:', 'postgresql:'].inclu
     && (target.port || '5432') === (development.port || '5432') && target.pathname === development.pathname)) {
   throw new Error('Integration tests may reset only a separate local depositdesk_test database.');
 }
-const env = { ...process.env, DATABASE_URL: raw, NODE_ENV: 'test', DEMO_MODE: 'true' };
+const env = { ...process.env, DATABASE_URL: raw, NODE_ENV: 'test', DEMO_MODE: 'true', UPLOAD_DIR: `${root}/tmp/test-uploads` };
 for (const args of [
   [`${root}/node_modules/prisma/build/index.js`, 'migrate', 'reset', '--force', '--skip-seed'],
   [`${root}/node_modules/vitest/vitest.mjs`, 'run', '--config', 'vitest.integration.config.ts', '--reporter', 'verbose'],

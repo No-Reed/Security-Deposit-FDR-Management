@@ -17,7 +17,7 @@ export const LoginPage: React.FC = () => {
     setError(null);
     try {
       await login(email.trim(), password);
-      navigate('/', { replace: true });
+      navigate('/instruments', { replace: true });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to sign in. Check your connection and try again.'));
     } finally { setIsLoading(false); }

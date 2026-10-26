@@ -48,29 +48,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       api.notifications
         .list()
         .then((items) => setNotifications(items))
-        .catch(() => {
-          // Provide mock demo notifications if backend is offline
-          setNotifications([
-            {
-              id: 'n1',
-              userId: user.id,
-              title: 'Maturity Alert: FDR #FDR-2024-0012',
-              message: 'Instrument is expiring in 14 days (Nov 9, 2026). Renewal action required.',
-              linkUrl: '/instruments',
-              isRead: false,
-              createdAt: new Date(Date.now() - 3600000).toISOString(),
-            },
-            {
-              id: 'n2',
-              userId: user.id,
-              title: 'Release Request Approved',
-              message: 'Release Request #REL-8821 for IIT Delhi has been approved by Regional Officer.',
-              linkUrl: '/releases',
-              isRead: false,
-              createdAt: new Date(Date.now() - 7200000).toISOString(),
-            },
-          ]);
-        });
+        .catch(() => { setNotifications([]); setSessionError('Notifications are unavailable. Refresh to retry.'); });
     }
   }, [user]);
 
@@ -81,7 +59,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       await api.notifications.markAllRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     } catch {
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setSessionError('Could not mark notifications as read. Please retry.');
     }
   };
 

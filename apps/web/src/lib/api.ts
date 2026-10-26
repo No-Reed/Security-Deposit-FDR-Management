@@ -86,6 +86,7 @@ export interface CurrentUser {
 
 export interface InstrumentSummary {
   id: string;
+  referenceCode?: string;
   institutionId: string;
   institutionName?: string;
   aicteId?: string | null;
@@ -125,6 +126,7 @@ export interface InstrumentDetail extends InstrumentSummary {
   };
   beneficiaryDetails?: string | null;
   submissionSnapshot?: any;
+  snapshots?: Array<{ id: string; submittedAt: string; payload: Record<string, any> }>;
   predecessorInstrument?: {
     id: string;
     instrumentNumber: string;
@@ -142,6 +144,9 @@ export interface InstrumentDetail extends InstrumentSummary {
     category: DocumentCategory;
     originalFilename: string;
     fileSizeBytes: number;
+    version?: number;
+    isSuperseded?: boolean;
+    malwareScan?: string;
     mimeType: string;
     sha256Hash: string;
     createdAt: string;
@@ -325,9 +330,15 @@ export const api = {
       const res = await apiClient.post(`/instruments/${id}/review`, { version, reason, notes });
       return res.data;
     },
-    verify: async (id: string, version: number, reason?: string) => {
+    verify: async (id: string, version: number, reason: string) => {
       const res = await apiClient.post(`/instruments/${id}/verify`, { version, reason });
       return res.data;
+    },
+    requestCorrection: async (id: string, version: number, reason: string) => {
+      return (await apiClient.post(`/instruments/${id}/action-required`, { version, reason })).data;
+    },
+    history: async (id: string): Promise<{ auditEvents: Array<{ id: string; action: string; timestamp: string; reason?: string; actor?: { name: string } }>; snapshots: Array<{ id: string; submittedAt: string; payload: Record<string, any> }> }> => {
+      return (await apiClient.get(`/instruments/${id}/history`)).data;
     },
     reject: async (id: string, version: number, reason: string) => {
       const res = await apiClient.post(`/instruments/${id}/reject`, { version, reason });
@@ -365,7 +376,7 @@ export const api = {
   // Verification
   verification: {
     record: async (instrumentId: string, data: any) => {
-      const res = await apiClient.post(`/verification/${instrumentId}`, data);
+      const res = await apiClient.post(`/verification/instruments/${instrumentId}`, data);
       return res.data;
     },
   },
@@ -380,8 +391,8 @@ export const api = {
       const res = await apiClient.post('/discrepancies', data);
       return res.data;
     },
-    resolve: async (id: string, resolutionNotes: string, status: 'RESOLVED' | 'DISMISSED') => {
-      const res = await apiClient.post(`/discrepancies/${id}/resolve`, { resolutionNotes, status });
+    resolve: async (id: string, resolutionNotes: string, status: 'RESPONDED' | 'RESOLVED' | 'DISMISSED', version?: number) => {
+      const res = await apiClient.patch(`/discrepancies/${id}/resolve`, { resolutionNotes, status, version });
       return res.data;
     },
   },
@@ -440,14 +451,17 @@ export const api = {
   notifications: {
     list: async (): Promise<NotificationItem[]> => {
       const res = await apiClient.get('/notifications');
-      return res.data;
+      return res.data.data.map((item: any) => ({
+        ...item, userId: item.recipientUserId, isRead: Boolean(item.readAt),
+        linkUrl: item.relatedEntityType === 'Instrument' ? `/instruments/${item.relatedEntityId}` : '/releases',
+      }));
     },
     markRead: async (id: string) => {
-      const res = await apiClient.patch(`/notifications/${id}/read`);
+      const res = await apiClient.post(`/notifications/${id}/read`);
       return res.data;
     },
     markAllRead: async () => {
-      const res = await apiClient.post('/notifications/mark-all-read');
+      const res = await apiClient.post('/notifications/read-all');
       return res.data;
     },
   },

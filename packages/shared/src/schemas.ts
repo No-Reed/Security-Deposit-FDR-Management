@@ -7,6 +7,8 @@ import {
   IndependentVerificationStatus,
   DocumentReviewStatus,
   ReleaseRequestStatus,
+  LifecycleStatus,
+  DateStatus,
 } from './types';
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -32,35 +34,54 @@ export const CreateInstitutionSchema = z.object({
   contactPhone: z.string().optional().nullable(),
 });
 
-export const UpdateInstitutionSchema = CreateInstitutionSchema.partial().extend({
-  isActive: z.boolean().optional(),
-});
+export const UpdateInstitutionSchema = CreateInstitutionSchema.partial().extend(
+  {
+    isActive: z.boolean().optional(),
+  },
+);
+
+export const BusinessDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const parsed = new Date(value + 'T00:00:00Z');
+    return (
+      Number.isFinite(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
+  }, 'Enter a valid calendar date');
 
 // ─── Instrument ──────────────────────────────────────────────────────────────
 export const CreateInstrumentBaseSchema = z.object({
   institutionId: z.string().cuid(),
   instrumentType: z.nativeEnum(InstrumentType),
-  instrumentNumber: z.string().min(1).max(255),
-  bankName: z.string().min(1).max(255),
-  bankBranch: z.string().min(1).max(255),
-  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Amount must be a positive decimal'),
-  currency: z.string().default('INR'),
-  issueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  maturityDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  validityEndDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-  purpose: z.string().min(1).max(500),
+  instrumentNumber: z.string().trim().min(1).max(255),
+  bankName: z.string().trim().min(1).max(255),
+  bankBranch: z.string().trim().min(1).max(255),
+  amount: z
+    .string()
+    .max(16)
+    .regex(/^\d{1,13}(\.\d{1,2})?$/, 'Amount must be a positive decimal'),
+  currency: z.literal('INR').default('INR'),
+  issueDate: BusinessDateSchema,
+  maturityDate: BusinessDateSchema,
+  validityEndDate: BusinessDateSchema.optional().nullable(),
+  purpose: z.string().trim().min(1).max(500),
   beneficiaryDetails: z.string().max(500).optional().nullable(),
 });
 
 export const CreateInstrumentSchema = CreateInstrumentBaseSchema.refine(
   (data) => new Date(data.issueDate) <= new Date(data.maturityDate),
-  { message: 'Issue date cannot be after maturity date', path: ['issueDate'] }
-).refine(
-  (data) => parseFloat(data.amount) > 0,
-  { message: 'Amount must be positive', path: ['amount'] }
-);
+  { message: 'Issue date cannot be after maturity date', path: ['issueDate'] },
+).refine((data) => parseFloat(data.amount) > 0, {
+  message: 'Amount must be positive',
+  path: ['amount'],
+});
 
-export const UpdateInstrumentSchema = CreateInstrumentBaseSchema.partial().omit({ institutionId: true });
+export const UpdateInstrumentSchema = CreateInstrumentBaseSchema.partial()
+  .omit({ institutionId: true })
+  .extend({ version: z.number().int().positive() })
+  .strict();
 
 // ─── Document ─────────────────────────────────────────────────────────────────
 export const DocumentUploadMetaSchema = z.object({
@@ -70,44 +91,56 @@ export const DocumentUploadMetaSchema = z.object({
 });
 
 // ─── Verification ─────────────────────────────────────────────────────────────
-export const RecordVerificationSchema = z.object({
-  documentReviewStatus: z.nativeEnum(DocumentReviewStatus),
-  independentVerificationStatus: z.nativeEnum(IndependentVerificationStatus),
-  sourceType: z.string().optional().nullable(),
-  sourceName: z.string().optional().nullable(),
-  referenceNumber: z.string().optional().nullable(),
-  result: z.string().min(1),
-  notes: z.string().optional().nullable(),
-}).refine(
-  (data) => {
-    if (data.independentVerificationStatus === IndependentVerificationStatus.CONFIRMED_BY_AUTHORIZED_SOURCE) {
-      return data.sourceName && data.referenceNumber;
-    }
-    return true;
-  },
-  { message: 'Source name and reference number are required for CONFIRMED_BY_AUTHORIZED_SOURCE', path: ['sourceName'] }
-);
+export const RecordVerificationSchema = z
+  .object({
+    version: z.number().int().positive(),
+    documentReviewStatus: z.nativeEnum(DocumentReviewStatus),
+    independentVerificationStatus: z.nativeEnum(IndependentVerificationStatus),
+    sourceType: z.string().optional().nullable(),
+    sourceName: z.string().optional().nullable(),
+    referenceNumber: z.string().optional().nullable(),
+    result: z.string().trim().min(1),
+    notes: z.string().optional().nullable(),
+  })
+  .refine(
+    (data) => {
+      if (
+        data.independentVerificationStatus ===
+        IndependentVerificationStatus.CONFIRMED_BY_AUTHORIZED_SOURCE
+      ) {
+        return data.sourceName && data.referenceNumber;
+      }
+      return true;
+    },
+    {
+      message:
+        'Source name and reference number are required for CONFIRMED_BY_AUTHORIZED_SOURCE',
+      path: ['sourceName'],
+    },
+  );
 
 // ─── Discrepancy ──────────────────────────────────────────────────────────────
 export const CreateDiscrepancySchema = z.object({
+  version: z.number().int().positive(),
   instrumentId: z.string().cuid(),
   releaseRequestId: z.string().cuid().optional(),
   code: z.string().min(1).max(100),
   severity: z.nativeEnum(DiscrepancySeverity),
   description: z.string().min(1).max(1000),
-  reason: z.string().min(1).max(1000),
+  reason: z.string().trim().min(1).max(1000),
 });
 
 export const ResolveDiscrepancySchema = z.object({
-  resolutionNotes: z.string().min(1).max(1000),
-  status: z.enum(['RESOLVED', 'DISMISSED']),
+  version: z.number().int().positive(),
+  resolutionNotes: z.string().trim().min(1).max(1000),
+  status: z.enum(['RESPONDED', 'RESOLVED', 'DISMISSED']),
 });
 
 // ─── Release Request ─────────────────────────────────────────────────────────
 export const CreateReleaseRequestSchema = z.object({
   instrumentId: z.string().cuid(),
   requestType: z.string().min(1).max(100),
-  reason: z.string().min(1).max(2000),
+  reason: z.string().trim().min(1).max(2000),
 });
 
 export const ReleaseDecisionSchema = z.object({
@@ -152,28 +185,39 @@ export const PaginationSchema = z.object({
 export const InstrumentFiltersSchema = PaginationSchema.extend({
   search: z.string().optional(),
   institutionId: z.string().cuid().optional(),
-  lifecycleStatus: z.string().optional(),
-  instrumentType: z.string().optional(),
+  lifecycleStatus: z.nativeEnum(LifecycleStatus).optional(),
+  queue: z.enum(['true', 'false']).optional(),
+  instrumentType: z.nativeEnum(InstrumentType).optional(),
   bankName: z.string().optional(),
-  dateStatus: z.string().optional(),
-  issueDateFrom: z.string().optional(),
-  issueDateTo: z.string().optional(),
-  maturityDateFrom: z.string().optional(),
-  maturityDateTo: z.string().optional(),
-  sortBy: z.string().optional(),
+  dateStatus: z.nativeEnum(DateStatus).optional(),
+  issueDateFrom: BusinessDateSchema.optional(),
+  issueDateTo: BusinessDateSchema.optional(),
+  maturityDateFrom: BusinessDateSchema.optional(),
+  maturityDateTo: BusinessDateSchema.optional(),
+  sortBy: z
+    .enum([
+      'createdAt',
+      'maturityDate',
+      'issueDate',
+      'amount',
+      'instrumentNumber',
+    ])
+    .optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
 });
 
 // ─── Renewal ──────────────────────────────────────────────────────────────────
 export const CreateRenewalSchema = CreateInstrumentBaseSchema.extend({
   predecessorInstrumentId: z.string().cuid(),
-}).refine(
-  (data) => new Date(data.issueDate) <= new Date(data.maturityDate),
-  { message: 'Issue date cannot be after maturity date', path: ['issueDate'] }
-).refine(
-  (data) => parseFloat(data.amount) > 0,
-  { message: 'Amount must be positive', path: ['amount'] }
-);
+})
+  .refine((data) => new Date(data.issueDate) <= new Date(data.maturityDate), {
+    message: 'Issue date cannot be after maturity date',
+    path: ['issueDate'],
+  })
+  .refine((data) => parseFloat(data.amount) > 0, {
+    message: 'Amount must be positive',
+    path: ['amount'],
+  });
 
 // ─── System Settings ─────────────────────────────────────────────────────────
 export const UpdateSystemSettingSchema = z.object({
@@ -196,7 +240,7 @@ export const SubmitTransitionSchema = z.object({
 
 export const ReviewTransitionSchema = z.object({
   version: z.number().int().positive(),
-  reason: z.string().min(1).max(2000),
+  reason: z.string().trim().min(1).max(2000),
   notes: z.string().optional().nullable(),
 });
 
@@ -207,7 +251,7 @@ export const RejectTransitionSchema = z.object({
 
 export const ResubmitTransitionSchema = z.object({
   version: z.number().int().positive(),
-  corrections: z.string().min(1).max(2000),
+  corrections: z.string().trim().min(1).max(2000),
 });
 
 export const CloseTransitionSchema = z.object({
@@ -245,7 +289,9 @@ export type UpdateInstrumentInput = z.infer<typeof UpdateInstrumentSchema>;
 export type RecordVerificationInput = z.infer<typeof RecordVerificationSchema>;
 export type CreateDiscrepancyInput = z.infer<typeof CreateDiscrepancySchema>;
 export type ResolveDiscrepancyInput = z.infer<typeof ResolveDiscrepancySchema>;
-export type CreateReleaseRequestInput = z.infer<typeof CreateReleaseRequestSchema>;
+export type CreateReleaseRequestInput = z.infer<
+  typeof CreateReleaseRequestSchema
+>;
 export type ReleaseDecisionInput = z.infer<typeof ReleaseDecisionSchema>;
 export type ReleaseCompletionInput = z.infer<typeof ReleaseCompletionSchema>;
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;

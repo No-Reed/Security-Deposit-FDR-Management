@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
-import { ZodError } from 'zod';
+import { ZodError } from '@depositdesk/shared';
 import { logger } from '../config/logger';
+import { Prisma } from '@prisma/client';
+import multer from 'multer';
 
 export interface ApiError extends Error {
   statusCode?: number;
@@ -8,7 +10,12 @@ export interface ApiError extends Error {
   details?: unknown;
 }
 
-export function createError(statusCode: number, code: string, message: string, details?: unknown): ApiError {
+export function createError(
+  statusCode: number,
+  code: string,
+  message: string,
+  details?: unknown,
+): ApiError {
   const err = new Error(message) as ApiError;
   err.statusCode = statusCode;
   err.code = code;
@@ -20,9 +27,34 @@ export function errorHandler(
   err: Error | ApiError,
   req: Request,
   res: Response,
-  _next: NextFunction
+  _next: NextFunction,
 ): void {
   const apiErr = err as ApiError;
+
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    ['P2025', 'P2002'].includes(err.code)
+  ) {
+    res.status(409).json({
+      error: {
+        code: 'RECORD_CONFLICT',
+        message: 'The record changed or already exists. Refresh and try again.',
+      },
+    });
+    return;
+  }
+  if (err instanceof multer.MulterError) {
+    res.status(422).json({
+      error: {
+        code: err.code,
+        message:
+          err.code === 'LIMIT_FILE_SIZE'
+            ? 'The file exceeds the upload size limit.'
+            : 'Invalid file upload.',
+      },
+    });
+    return;
+  }
 
   // Zod validation errors
   if (err instanceof ZodError) {
@@ -30,7 +62,10 @@ export function errorHandler(
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Validation failed',
-        details: err.errors.map(e => ({ path: e.path.join('.'), message: e.message })),
+        details: err.errors.map((e) => ({
+          path: e.path.join('.'),
+          message: e.message,
+        })),
       },
     });
     return;
@@ -41,7 +76,10 @@ export function errorHandler(
 
   // Never expose internal details to client in production
   if (statusCode === 500) {
-    logger.error({ err, requestId: req.headers['x-request-id'] }, 'Unhandled error');
+    logger.error(
+      { err, requestId: req.headers['x-request-id'] },
+      'Unhandled error',
+    );
     res.status(500).json({
       error: {
         code: 'INTERNAL_ERROR',
