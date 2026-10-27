@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'path';
+import fs from 'fs';
 import helmet from 'helmet';
 import cors from 'cors';
 import session from 'express-session';
@@ -40,8 +42,9 @@ export function createApp() {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", 'data:'],
+          styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+          fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+          imgSrc: ["'self'", 'data:', 'blob:'],
           connectSrc: ["'self'"],
         },
       },
@@ -134,7 +137,20 @@ export function createApp() {
 
   app.use('/api/v1', api);
 
-  // 404 handler
+  // In production or when web dist exists, serve the compiled frontend
+  const webDistPath = path.resolve(__dirname, '../../web/dist');
+  if (fs.existsSync(webDistPath)) {
+    app.use(express.static(webDistPath));
+    app.get('*', (req, res, next) => {
+      // Don't intercept unmatched API routes
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+      res.sendFile(path.join(webDistPath, 'index.html'));
+    });
+  }
+
+  // 404 handler for API routes
   app.use((_req, res) => {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
   });

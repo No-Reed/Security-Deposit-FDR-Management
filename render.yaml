@@ -1,0 +1,34 @@
+databases:
+  - name: depositdesk-db
+    databaseName: depositdesk
+    user: postgres
+    plan: free
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: depositdesk
+    env: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm run db:migrate && npm run db:seed && npm run start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "true"
+      - key: ALLOW_DEMO_IN_PROD
+        value: "true"
+      - key: DEMO_PASSWORD
+        value: DemoPassword123!
+      - key: APP_TIMEZONE
+        value: Asia/Kolkata
+      - key: UPLOAD_DIR
+        value: ./private-uploads
+      - key: DATABASE_URL
+        fromDatabase:
+          name: depositdesk-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true

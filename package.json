@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "dev": "npm run build -w packages/shared && concurrently \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
-    "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web",
+    "build": "npm run db:generate && npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web",
+    "start": "npm run start -w apps/api",
     "lint": "npm run lint -w apps/api && npm run lint -w apps/web && npm run lint -w packages/shared",
     "typecheck": "npm run build -w packages/shared && npm run typecheck -w packages/shared && npm run typecheck -w apps/api && npm run typecheck -w apps/web",
     "test": "npm run build -w packages/shared && npm run test -w apps/api",
@@ -18,6 +19,9 @@
     "verify": "npm run db:generate && npm run lint && npm run typecheck && npm run test && npm run test:integration && npm run build",
     "test:integration": "npm run build -w packages/shared && npm run test:integration -w apps/api",
     "db:generate": "npm run db:generate -w apps/api"
+  },
+  "engines": {
+    "node": ">=20.6.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

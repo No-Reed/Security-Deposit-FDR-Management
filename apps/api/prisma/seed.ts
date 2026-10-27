@@ -20,9 +20,9 @@ import { todayInTz } from '../src/lib/dates';
 
 const prisma = new PrismaClient();
 
-// Safety: refuse to run in production
-if (process.env.NODE_ENV === 'production') {
-  console.error('❌ Seed script refuses to run in NODE_ENV=production');
+// Safety: refuse to run in production unless explicitly allowed for live demo
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_IN_PROD !== 'true') {
+  console.error('❌ Seed script refuses to run in NODE_ENV=production without ALLOW_DEMO_IN_PROD=true');
   process.exit(1);
 }
 
@@ -61,6 +61,10 @@ function nextRef(prefix: string): string {
 
 async function main() {
   if ((await prisma.instrument.count()) > 0) {
+    if (process.env.NODE_ENV === 'production' || process.env.SKIP_SEED_IF_POPULATED === 'true') {
+      console.log('ℹ️  Database already contains instruments. Skipping demo seed.');
+      return;
+    }
     throw new Error(
       'Seed requires an empty demo database. Use the explicitly confirmed local demo reset command to rebuild it.',
     );
