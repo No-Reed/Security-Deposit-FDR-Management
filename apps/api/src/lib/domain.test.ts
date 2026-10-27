@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { RenewalStatus, ReleaseStatus, ReleaseRequestStatus } from '@depositdesk/shared';
+import {
+  RenewalStatus,
+  ReleaseStatus,
+  ReleaseRequestStatus,
+} from '@depositdesk/shared';
 import { LifecycleStatus } from '@prisma/client';
-import { deriveRenewalStatus, deriveReleaseStatus, sanitizeCsvCell, generateReferenceCode } from './domain';
+import {
+  deriveRenewalStatus,
+  deriveReleaseStatus,
+  sanitizeCsvCell,
+  generateReferenceCode,
+} from './domain';
 
 describe('Domain logic and security helpers', () => {
   describe('deriveRenewalStatus', () => {
@@ -14,12 +23,28 @@ describe('Domain logic and security helpers', () => {
     });
 
     it('returns IN_PROGRESS if successor is under review', () => {
-      expect(deriveRenewalStatus(true, LifecycleStatus.UNDER_REVIEW)).toBe(RenewalStatus.IN_PROGRESS);
+      expect(deriveRenewalStatus(true, LifecycleStatus.UNDER_REVIEW)).toBe(
+        RenewalStatus.IN_PROGRESS,
+      );
     });
 
     it('returns COMPLETED if successor is verified', () => {
-      expect(deriveRenewalStatus(true, LifecycleStatus.VERIFIED)).toBe(RenewalStatus.COMPLETED);
+      expect(deriveRenewalStatus(true, LifecycleStatus.VERIFIED)).toBe(
+        RenewalStatus.COMPLETED,
+      );
     });
+  });
+
+  it('tracks replacement progress even before maturity', () => {
+    expect(deriveRenewalStatus(false, LifecycleStatus.DRAFT)).toBe(
+      RenewalStatus.IN_PROGRESS,
+    );
+    expect(deriveRenewalStatus(false, LifecycleStatus.VERIFIED)).toBe(
+      RenewalStatus.COMPLETED,
+    );
+    expect(deriveRenewalStatus(false, LifecycleStatus.REJECTED)).toBe(
+      RenewalStatus.REQUIRED,
+    );
   });
 
   describe('deriveReleaseStatus', () => {
@@ -28,15 +53,21 @@ describe('Domain logic and security helpers', () => {
     });
 
     it('returns OPEN if a pending request exists', () => {
-      expect(deriveReleaseStatus([{ status: ReleaseRequestStatus.SUBMITTED }])).toBe(ReleaseStatus.OPEN);
+      expect(
+        deriveReleaseStatus([{ status: ReleaseRequestStatus.SUBMITTED }]),
+      ).toBe(ReleaseStatus.OPEN);
     });
 
     it('returns APPROVED if an approved request exists', () => {
-      expect(deriveReleaseStatus([{ status: ReleaseRequestStatus.APPROVED }])).toBe(ReleaseStatus.APPROVED);
+      expect(
+        deriveReleaseStatus([{ status: ReleaseRequestStatus.APPROVED }]),
+      ).toBe(ReleaseStatus.APPROVED);
     });
 
     it('returns COMPLETED if all are completed', () => {
-      expect(deriveReleaseStatus([{ status: ReleaseRequestStatus.COMPLETED }])).toBe(ReleaseStatus.COMPLETED);
+      expect(
+        deriveReleaseStatus([{ status: ReleaseRequestStatus.COMPLETED }]),
+      ).toBe(ReleaseStatus.COMPLETED);
     });
   });
 
@@ -49,7 +80,9 @@ describe('Domain logic and security helpers', () => {
     });
 
     it('leaves standard text unchanged', () => {
-      expect(sanitizeCsvCell('State Bank of India')).toBe('State Bank of India');
+      expect(sanitizeCsvCell('State Bank of India')).toBe(
+        'State Bank of India',
+      );
       expect(sanitizeCsvCell('FDR-2024-001')).toBe('FDR-2024-001');
     });
 

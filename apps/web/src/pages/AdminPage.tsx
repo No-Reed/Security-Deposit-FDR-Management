@@ -1,433 +1,590 @@
-import React, { useState, useEffect } from 'react';
-import { Role } from '@depositdesk/shared';
+import React, { useState } from 'react';
+import { api, apiClient } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../lib/api';
-import { Modal } from '../components/common/Modal';
 import {
-  Settings,
-  Users,
-  Play,
-  CheckSquare,
-  Shield,
-  Plus,
-  CheckCircle2,
-  AlertCircle,
-  Building,
-} from 'lucide-react';
-
-interface UserRow {
-  id: string;
-  name: string;
-  email: string;
-  role: Role;
-  isActive: boolean;
-  institutionName?: string;
-  lastLoginAt?: string | null;
-}
-
-const MOCK_USERS: UserRow[] = [
-  {
-    id: 'u1',
-    name: 'Dr. Ramesh Sharma',
-    email: 'iu@demo.aicte.gov.in',
-    role: Role.INSTITUTION_USER,
-    isActive: true,
-    institutionName: 'Delhi Institute of Engineering & Technology',
-    lastLoginAt: '2026-10-26T10:00:00Z',
-  },
-  {
-    id: 'so-1',
-    name: 'Ananya Verma',
-    email: 'so@demo.aicte.gov.in',
-    role: Role.SCRUTINY_OFFICER,
-    isActive: true,
-    lastLoginAt: '2026-10-26T11:30:00Z',
-  },
-  {
-    id: 'aa-1',
-    name: 'Prof. K. S. Sundaram',
-    email: 'aa@demo.aicte.gov.in',
-    role: Role.APPROVING_AUTHORITY,
-    isActive: true,
-    lastLoginAt: '2026-10-26T12:00:00Z',
-  },
-  {
-    id: 'sa-1',
-    name: 'Vikram Mehta',
-    email: 'admin@demo.aicte.gov.in',
-    role: Role.SYSTEM_ADMIN,
-    isActive: true,
-    lastLoginAt: '2026-10-26T13:00:00Z',
-  },
+  PageTitle,
+  Feedback,
+  Pager,
+  useRemote,
+  formatDate,
+} from '../components/common/PageTools';
+const roleNames = [
+  'INSTITUTION_USER',
+  'SCRUTINY_OFFICER',
+  'APPROVING_AUTHORITY',
+  'SYSTEM_ADMIN',
 ];
-
 export const AdminPage: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'checklist'>('settings');
-
-  // Job execution state
-  const [jobRunning, setJobRunning] = useState(false);
-  const [jobResult, setJobResult] = useState<string | null>(null);
-
-  // Users state
-  const [users, setUsers] = useState<UserRow[]>(MOCK_USERS);
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [newUserName, setNewUserName] = useState('');
-  const [newUserEmail, setNewUserEmail] = useState('');
-  const [newUserRole, setNewUserRole] = useState<Role>(Role.INSTITUTION_USER);
-
-  // Settings state
-  const [alertDays, setAlertDays] = useState('90,60,30,15,7,1');
-  const [escalationDays, setEscalationDays] = useState('7');
-  const [maxUpload, setMaxUpload] = useState('10');
-  const [settingsSaved, setSettingsSaved] = useState(false);
-
-  // Checklist state
-  const [checklist, setChecklist] = useState([
-    { id: '1', label: 'Joint lien clause verified with bank manager confirmation', isRequired: true },
-    { id: '2', label: 'Original Fixed Deposit Receipt submitted or endorsed scan uploaded', isRequired: true },
-    { id: '3', label: 'No student pending grievance or fee refund dispute on portal', isRequired: true },
-    { id: '4', label: 'AICTE Executive Committee / Regional Officer closure approval order attached', isRequired: true },
-    { id: '5', label: 'Audit clearance and non-encumbrance certificate verified', isRequired: false },
-  ]);
-
-  useEffect(() => {
-    api.admin
-      .getUsers()
-      .then((data) => {
-        if (data && data.length > 0) setUsers(data);
-      })
-      .catch(() => {});
-  }, []);
-
-  const handleRunMaturityJob = async () => {
-    setJobRunning(true);
-    setJobResult(null);
-    try {
-      const res = await api.admin.triggerMaturityCheck();
-      setJobResult(`Maturity check completed successfully. Processed instruments; notifications dispatched with deduplication keys.`);
-    } catch {
-      setJobResult('Maturity check triggered (simulated demo execution): 4 notifications created for instruments under 90-day threshold.');
-    } finally {
-      setJobRunning(false);
-    }
-  };
-
-  const handleSaveSettings = () => {
-    setSettingsSaved(true);
-    setTimeout(() => setSettingsSaved(false), 3000);
-  };
-
-  const handleCreateUser = async () => {
-    const newUser: UserRow = {
-      id: `u-${Date.now()}`,
-      name: newUserName,
-      email: newUserEmail,
-      role: newUserRole,
-      isActive: true,
-      institutionName: newUserRole === Role.INSTITUTION_USER ? 'Delhi Institute of Technology' : undefined,
-    };
-    try {
-      await api.admin.createUser({ name: newUserName, email: newUserEmail, role: newUserRole });
-    } catch {}
-    setUsers((prev) => [newUser, ...prev]);
-    setShowUserModal(false);
-    setNewUserName('');
-    setNewUserEmail('');
-  };
-
+  const [tab, setTab] = useState('Reminders'),
+    [page, setPage] = useState(1),
+    [staff, setStaff] = useState(''),
+    [temporary, setTemporary] = useState(''),
+    [job, setJob] = useState('');
+  const [name, setName] = useState(''),
+    [email, setEmail] = useState(''),
+    [role, setRole] = useState('INSTITUTION_USER'),
+    [institutionId, setInstitutionId] = useState('');
+  const state = useRemote(
+    async () => ({
+      users: (
+        await apiClient.get('/admin/users', { params: { page, pageSize: 20 } })
+      ).data,
+      institutions: await api.admin.getInstitutions(),
+      settings: await api.admin.getSystemSettings(),
+      checklist: await api.admin.getChecklist(),
+    }),
+    [page],
+  );
+  const scopes = useRemote(
+    async () => (staff ? api.admin.getScope(staff) : []),
+    [staff],
+  );
+  const [checkLabel, setCheckLabel] = useState('');
+  const [edit, setEdit] = useState<any>(null);
+  if (user?.role !== 'SYSTEM_ADMIN')
+    return (
+      <p role="alert">
+        Administration requires a system administrator account.
+      </p>
+    );
+  const settings = state.data?.settings || [];
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">System Administration & Parameters</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Configure AICTE regulatory intervals, checklist enforcement, user roles, and trigger on-demand maturity audits.
-        </p>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-border text-xs">
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`pb-2.5 px-3 font-medium transition-colors border-b-2 flex items-center gap-1.5 ${
-            activeTab === 'settings'
-              ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          <span>System Parameters & Jobs</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('users')}
-          className={`pb-2.5 px-3 font-medium transition-colors border-b-2 flex items-center gap-1.5 ${
-            activeTab === 'users'
-              ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>User Access Control</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('checklist')}
-          className={`pb-2.5 px-3 font-medium transition-colors border-b-2 flex items-center gap-1.5 ${
-            activeTab === 'checklist'
-              ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <CheckSquare className="w-4 h-4" />
-          <span>Release Scrutiny Checklist</span>
-        </button>
-      </div>
-
-      {/* Tab 1: Settings & Jobs */}
-      {activeTab === 'settings' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Scheduled Maturity Job Trigger */}
-          <div className="card-notion p-5 space-y-4">
-            <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">
-              On-Demand Maturity Check Execution
-            </h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Maturity checks run automatically every midnight in production. You can trigger an on-demand pass right now
-              to evaluate all instruments against the alert thresholds and generate deduplicated in-app notifications.
-            </p>
-
+    <div className="space-y-5">
+      <PageTitle
+        eyebrow="SYSTEM GOVERNANCE"
+        title="Administration"
+        description="Manage demo accounts, institution access, reminder thresholds and policy checklists. Business decisions remain with authorized officers."
+      />
+      <Feedback state={state} />
+      <nav
+        className="flex flex-wrap gap-2 border-b"
+        aria-label="Administration sections"
+      >
+        {['Reminders', 'Users', 'Institution access', 'Release checklist'].map(
+          (value) => (
             <button
-              onClick={handleRunMaturityJob}
-              disabled={jobRunning}
-              className="btn-primary text-xs py-2 px-4 flex items-center gap-2 shadow-sm disabled:opacity-50"
+              key={value}
+              aria-pressed={tab === value}
+              className={`px-3 py-2 text-sm border-b-2 ${tab === value ? 'border-orange-600 text-orange-700' : 'border-transparent text-slate-500'}`}
+              onClick={() => setTab(value)}
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>{jobRunning ? 'Executing Check...' : 'Trigger Maturity Check Job Now'}</span>
+              {value}
             </button>
-
-            {jobResult && (
-              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>{jobResult}</span>
-              </div>
+          ),
+        )}
+      </nav>
+      {tab === 'Reminders' && (
+        <div className="grid xl:grid-cols-[1.3fr_1fr] gap-5">
+          <section className="card-notion space-y-4">
+            <h2>Monitoring configuration</h2>
+            {settings
+              .filter((item: any) =>
+                [
+                  'maturityAlertDays',
+                  'escalationDays',
+                  'escalationRepeatDays',
+                ].includes(item.key),
+              )
+              .map((item: any) => (
+                <form
+                  key={`${item.key}-${item.updatedAt}`}
+                  className="flex flex-wrap gap-2 items-end"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const value = String(
+                      new FormData(event.currentTarget).get('value'),
+                    );
+                    state.act(
+                      () => api.admin.updateSystemSetting(item.key, value),
+                      'Reminder setting saved. Future reads and job runs use the new value.',
+                    );
+                  }}
+                >
+                  <label className="text-sm flex-1">
+                    {item.key === 'maturityAlertDays'
+                      ? 'Reminder thresholds (days, comma separated)'
+                      : item.key === 'escalationDays'
+                        ? 'Escalate after overdue days'
+                        : 'Repeat escalation every days'}
+                    <input
+                      className="input-notion"
+                      name="value"
+                      defaultValue={item.value}
+                      required
+                    />
+                  </label>
+                  <button className="btn-outline" disabled={state.busy}>
+                    Save
+                  </button>
+                </form>
+              ))}
+            <p className="text-xs text-slate-500">
+              Other deployment settings are read-only here. Timezone:
+              Asia/Kolkata. Reminders go to institution users and scoped
+              officers; overdue escalations go to scoped officers and
+              authorities.
+            </p>
+          </section>
+          <section className="card-notion space-y-4">
+            <h2>Run monitoring check</h2>
+            <p className="text-sm text-slate-500">
+              Evaluate current deadlines now. Repeated runs use unique
+              notification keys and do not duplicate the same reminder or
+              escalation.
+            </p>
+            <button
+              className="btn-primary"
+              disabled={state.busy}
+              onClick={() =>
+                state.act(async () => {
+                  const result = await api.admin.triggerMaturityCheck();
+                  setJob(
+                    `${result.checked} instruments checked · ${result.notificationsCreated} reminders · ${result.escalations} escalations created`,
+                  );
+                }, 'Monitoring check completed.')
+              }
+            >
+              Run maturity check
+            </button>
+            {job && (
+              <p role="status" className="notice notice-success">
+                {job}
+              </p>
             )}
-          </div>
-
-          {/* System Parameters Form */}
-          <div className="card-notion p-5 space-y-4">
-            <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">
-              Alert Intervals & Escalations
-            </h3>
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  Maturity Reminder Days (Comma-separated)
-                </label>
-                <input
-                  type="text"
-                  value={alertDays}
-                  onChange={(e) => setAlertDays(e.target.value)}
-                  className="input-notion text-xs font-mono"
-                />
-                <p className="text-2xs text-muted-foreground mt-0.5">
-                  Thresholds in days prior to maturity where alerts trigger.
-                </p>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  Matured Escalation Threshold (Days)
-                </label>
-                <input
-                  type="text"
-                  value={escalationDays}
-                  onChange={(e) => setEscalationDays(e.target.value)}
-                  className="input-notion text-xs font-mono"
-                />
-                <p className="text-2xs text-muted-foreground mt-0.5">
-                  Days past maturity before escalating to Regional Officer.
-                </p>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  Maximum Document Upload Size (MB)
-                </label>
-                <input
-                  type="text"
-                  value={maxUpload}
-                  onChange={(e) => setMaxUpload(e.target.value)}
-                  className="input-notion text-xs font-mono"
-                />
-              </div>
-
-              <button onClick={handleSaveSettings} className="btn-secondary text-xs py-1.5 px-3">
-                Save Parameter Updates
-              </button>
-
-              {settingsSaved && (
-                <p className="text-2xs text-emerald-600 font-semibold">Parameters updated successfully.</p>
-              )}
-            </div>
-          </div>
+            <p className="text-xs text-slate-400">
+              The scheduled job runs daily at 06:00 in India. In-app delivery
+              only.
+            </p>
+          </section>
         </div>
       )}
-
-      {/* Tab 2: Users */}
-      {activeTab === 'users' && (
-        <div className="card-notion p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-border">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">Registered System Users</h3>
-              <p className="text-2xs text-muted-foreground">Manage user accounts and role assignments.</p>
-            </div>
-            <button
-              onClick={() => setShowUserModal(true)}
-              className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5"
+      {tab === 'Users' && (
+        <div className="space-y-5">
+          {edit && (
+            <form
+              className="card-notion space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (
+                  window.confirm(
+                    'Save this account role and institution mapping? Existing sessions immediately use the updated access.',
+                  )
+                )
+                  state.act(async () => {
+                    await api.admin.updateUser(edit.id, {
+                      name: edit.name,
+                      email: edit.email,
+                      role: edit.role,
+                      institutionId:
+                        edit.role === 'INSTITUTION_USER'
+                          ? edit.institutionId
+                          : null,
+                    });
+                    setEdit(null);
+                  }, 'Account details saved.');
+              }}
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create User</span>
+              <h2>Edit account</h2>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label>
+                  Name
+                  <input
+                    className="input-notion"
+                    required
+                    minLength={2}
+                    value={edit.name}
+                    onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Email
+                  <input
+                    className="input-notion"
+                    required
+                    type="email"
+                    value={edit.email}
+                    onChange={(e) =>
+                      setEdit({ ...edit, email: e.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Role
+                  <select
+                    className="input-notion"
+                    value={edit.role}
+                    disabled={edit.id === user.id}
+                    onChange={(e) => setEdit({ ...edit, role: e.target.value })}
+                  >
+                    {roleNames.map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                {edit.role === 'INSTITUTION_USER' && (
+                  <label>
+                    Institution
+                    <select
+                      className="input-notion"
+                      required
+                      value={edit.institutionId || ''}
+                      onChange={(e) =>
+                        setEdit({ ...edit, institutionId: e.target.value })
+                      }
+                    >
+                      <option value="">Choose institution</option>
+                      {state.data?.institutions.data
+                        .filter((item: any) => item.isActive)
+                        .map((item: any) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+              <p className="text-xs text-slate-500">
+                Staff institution access is managed in the Institution access
+                section.
+              </p>
+              <div className="flex gap-2">
+                <button className="btn-primary" disabled={state.busy}>
+                  Save account
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => setEdit(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+          <form
+            className="card-notion space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              state.act(async () => {
+                const created = await api.admin.createUser({
+                  name,
+                  email,
+                  role,
+                  institutionId:
+                    role === 'INSTITUTION_USER' ? institutionId : null,
+                });
+                setTemporary(created.temporaryPassword);
+                setName('');
+                setEmail('');
+              }, 'User created. Copy the temporary password below.');
+            }}
+          >
+            <h2>Create account</h2>
+            <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              <label className="text-sm">
+                Name
+                <input
+                  required
+                  minLength={2}
+                  className="input-notion"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </label>
+              <label className="text-sm">
+                Email
+                <input
+                  required
+                  type="email"
+                  className="input-notion"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </label>
+              <label className="text-sm">
+                Role
+                <select
+                  className="input-notion"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                >
+                  {roleNames.map((value) => (
+                    <option key={value}>{value}</option>
+                  ))}
+                </select>
+              </label>
+              {role === 'INSTITUTION_USER' && (
+                <label className="text-sm">
+                  Institution
+                  <select
+                    required
+                    className="input-notion"
+                    value={institutionId}
+                    onChange={(e) => setInstitutionId(e.target.value)}
+                  >
+                    <option value="">Choose institution</option>
+                    {state.data?.institutions.data
+                      .filter((item: any) => item.isActive)
+                      .map((item: any) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <button className="btn-primary" disabled={state.busy}>
+              Create user
             </button>
-          </div>
-
-          <div className="overflow-x-auto">
+          </form>
+          {temporary && (
+            <div
+              role="status"
+              className="notice border-amber-200 bg-amber-50 text-amber-900"
+            >
+              <p className="font-semibold">
+                Temporary password — shown once in this view
+              </p>
+              <p className="font-mono break-all mt-2 select-all">{temporary}</p>
+              <p className="text-xs mt-2">
+                Share through your authorized local demo process. It is never
+                written to audit records.
+              </p>
+              <button
+                className="underline mt-2 text-xs"
+                onClick={() => setTemporary('')}
+              >
+                Dismiss password
+              </button>
+            </div>
+          )}
+          <div className="card-notion overflow-x-auto p-0">
             <table className="table-notion">
-              <thead className="bg-slate-50/70">
+              <thead>
                 <tr>
-                  <th>Name & Email</th>
-                  <th>Role</th>
-                  <th>Institution Scope</th>
+                  <th>User</th>
+                  <th>Role / institution</th>
+                  <th>Last login</th>
                   <th>Status</th>
-                  <th>Last Login</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
-                  <tr key={u.id}>
+                {state.data?.users.data.map((item: any) => (
+                  <tr key={item.id}>
                     <td>
-                      <p className="font-semibold text-foreground text-xs">{u.name}</p>
-                      <p className="text-2xs text-muted-foreground font-mono">{u.email}</p>
+                      {item.name}
+                      <p className="text-xs text-slate-500">{item.email}</p>
                     </td>
                     <td>
-                      <span className="code-ref text-2xs">{u.role}</span>
+                      {item.role.split('_').join(' ')}
+                      <p className="text-xs text-slate-500">
+                        {item.institution?.name || 'Staff access mapping'}
+                      </p>
                     </td>
+                    <td>{formatDate(item.lastLoginAt)}</td>
+                    <td>{item.isActive ? 'Active' : 'Inactive'}</td>
                     <td>
-                      <span className="text-xs text-slate-600">{u.institutionName || 'All Institutions'}</span>
-                    </td>
-                    <td>
-                      <span className="px-2 py-0.5 rounded text-2xs font-semibold bg-emerald-100 text-emerald-800">
-                        Active
-                      </span>
-                    </td>
-                    <td>
-                      <span className="text-2xs text-muted-foreground">
-                        {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never'}
-                      </span>
+                      <button
+                        className="text-orange-700 mr-3"
+                        onClick={() => setEdit({ ...item })}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="text-orange-700"
+                        disabled={state.busy || item.id === user.id}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `${item.isActive ? 'Disable' : 'Activate'} this account?`,
+                            )
+                          )
+                            state.act(
+                              () =>
+                                api.admin.updateUser(item.id, {
+                                  isActive: !item.isActive,
+                                }),
+                              'Account status saved.',
+                            );
+                        }}
+                      >
+                        {item.isActive ? 'Disable' : 'Activate'}
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <Pager
+            page={page}
+            total={state.data?.users.total || 0}
+            onChange={setPage}
+            disabled={state.loading}
+          />
         </div>
       )}
-
-      {/* Tab 3: Checklist */}
-      {activeTab === 'checklist' && (
-        <div className="card-notion p-5 space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Release Request Verification Checklist</h3>
-          <p className="text-2xs text-muted-foreground">
-            Items that Scrutiny Officers must systematically check before forwarding release requests to the Approving Authority.
+      {tab === 'Institution access' && (
+        <section className="card-notion space-y-4">
+          <h2>Staff institution scope</h2>
+          <p className="text-xs text-slate-500">
+            Only selected institutions are visible to this officer or authority.
+            Institution users remain mapped to their own institution.
           </p>
-
-          <div className="space-y-2">
-            {checklist.map((item, idx) => (
-              <div
-                key={item.id}
-                className="p-3 rounded-lg border border-border bg-slate-50/50 flex items-center justify-between text-xs"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0">
-                    {idx + 1}
-                  </span>
-                  <div>
-                    <p className="font-semibold text-slate-800">{item.label}</p>
-                    <span className="text-2xs text-muted-foreground">
-                      {item.isRequired ? 'Mandatory for forward' : 'Optional recommendation'}
-                    </span>
-                  </div>
-                </div>
-                <span
-                  className={`px-2 py-0.5 rounded text-2xs font-semibold ${
-                    item.isRequired ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  {item.isRequired ? 'Required' : 'Advisory'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Create User Modal */}
-      <Modal
-        isOpen={showUserModal}
-        onClose={() => setShowUserModal(false)}
-        title="Create New System User"
-        description="Add a new administrator, officer, or institution user to DepositDesk."
-        maxWidth="md"
-        footer={
-          <>
-            <button onClick={() => setShowUserModal(false)} className="btn-outline text-xs">
-              Cancel
-            </button>
-            <button onClick={handleCreateUser} className="btn-primary text-xs">
-              Create User
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-3 text-xs">
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">Full Name</label>
-            <input
-              type="text"
-              value={newUserName}
-              onChange={(e) => setNewUserName(e.target.value)}
-              className="input-notion text-xs"
-              placeholder="e.g. Dr. Rajesh Kumar"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">Official Email</label>
-            <input
-              type="email"
-              value={newUserEmail}
-              onChange={(e) => setNewUserEmail(e.target.value)}
-              className="input-notion text-xs"
-              placeholder="e.g. rajesh@aicte.gov.in"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">Assigned Role</label>
+          <label className="block text-sm">
+            Staff account
             <select
-              value={newUserRole}
-              onChange={(e) => setNewUserRole(e.target.value as Role)}
-              className="input-notion text-xs"
+              className="input-notion"
+              value={staff}
+              onChange={(e) => setStaff(e.target.value)}
             >
-              <option value={Role.INSTITUTION_USER}>Institution User (IU)</option>
-              <option value={Role.SCRUTINY_OFFICER}>Scrutiny Officer (SO)</option>
-              <option value={Role.APPROVING_AUTHORITY}>Approving Authority (AA)</option>
-              <option value={Role.SYSTEM_ADMIN}>System Administrator (SA)</option>
+              <option value="">Choose staff account from this user page</option>
+              {state.data?.users.data
+                .filter((item: any) =>
+                  ['SCRUTINY_OFFICER', 'APPROVING_AUTHORITY'].includes(
+                    item.role,
+                  ),
+                )
+                .map((item: any) => (
+                  <option value={item.id} key={item.id}>
+                    {item.name}
+                  </option>
+                ))}
             </select>
+          </label>
+          <Feedback state={scopes} />
+          {staff &&
+            state.data?.institutions.data.map((item: any) => (
+              <label
+                key={item.id}
+                className="flex items-center gap-3 border-b py-2 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-orange-700"
+                  checked={Boolean(
+                    scopes.data?.some(
+                      (scope: any) => scope.institutionId === item.id,
+                    ),
+                  )}
+                  disabled={scopes.busy || scopes.loading}
+                  onChange={(event) =>
+                    scopes.act(
+                      () =>
+                        event.target.checked
+                          ? api.admin.addScope(staff, item.id)
+                          : api.admin.removeScope(staff, item.id),
+                      'Institution access saved.',
+                    )
+                  }
+                />
+                {item.name}
+              </label>
+            ))}
+        </section>
+      )}
+      {tab === 'Release checklist' && (
+        <section className="space-y-4">
+          <div className="notice border-orange-200 bg-orange-50 text-orange-900">
+            Demo policy configuration. Changes apply to newly created requests;
+            existing requests preserve their captured checklist.
           </div>
-        </div>
-      </Modal>
+          <form
+            className="card-notion flex flex-wrap gap-3 items-end"
+            onSubmit={(event) => {
+              event.preventDefault();
+              state.act(async () => {
+                await api.admin.createChecklistItem({
+                  label: checkLabel,
+                  isRequired: true,
+                  isActive: true,
+                  sortOrder: (state.data?.checklist.length || 0) + 1,
+                });
+                setCheckLabel('');
+              }, 'Checklist item added.');
+            }}
+          >
+            <label className="text-sm flex-1">
+              New required item
+              <input
+                className="input-notion"
+                required
+                value={checkLabel}
+                onChange={(e) => setCheckLabel(e.target.value)}
+              />
+            </label>
+            <button
+              className="btn-primary"
+              disabled={state.busy || !checkLabel.trim()}
+            >
+              Add item
+            </button>
+          </form>
+          {state.data?.checklist.map((item: any) => (
+            <form
+              key={`${item.id}-${item.updatedAt}`}
+              className="card-notion flex flex-wrap gap-3 items-end"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const values = new FormData(event.currentTarget);
+                state.act(
+                  () =>
+                    api.admin.updateChecklistItem(item.id, {
+                      label: String(values.get('label')),
+                      sortOrder: Number(values.get('sortOrder')),
+                      isRequired: values.has('isRequired'),
+                      isActive: values.has('isActive'),
+                    }),
+                  'Checklist item saved.',
+                );
+              }}
+            >
+              <label className="text-sm flex-1 min-w-[160px]">
+                Label
+                <input
+                  className="input-notion"
+                  name="label"
+                  required
+                  defaultValue={item.label}
+                />
+              </label>
+              <label className="text-sm w-20">
+                Order
+                <input
+                  className="input-notion"
+                  type="number"
+                  name="sortOrder"
+                  required
+                  defaultValue={item.sortOrder}
+                />
+              </label>
+              <label className="text-sm flex gap-2 items-center py-2">
+                <input
+                  type="checkbox"
+                  name="isRequired"
+                  defaultChecked={item.isRequired}
+                />
+                Required
+              </label>
+              <label className="text-sm flex gap-2 items-center py-2">
+                <input
+                  type="checkbox"
+                  name="isActive"
+                  defaultChecked={item.isActive}
+                />
+                Active
+              </label>
+              <button className="btn-outline" disabled={state.busy}>
+                Save
+              </button>
+            </form>
+          ))}
+        </section>
+      )}
     </div>
   );
 };

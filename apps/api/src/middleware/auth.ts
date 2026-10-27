@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { Role } from '@depositdesk/shared';
 import { createError } from './errorHandler';
 import { prisma } from '../config/prisma';
+import { randomUUID } from 'crypto';
 
 // Extend Express Request to include session data
 declare module 'express-session' {
@@ -109,7 +110,7 @@ export function csrfProtect(req: Request, res: Response, next: NextFunction): vo
   }
 
   // Exempt auth login because session & CSRF token do not exist yet before authentication
-  if (req.path === '/login' || req.originalUrl?.includes('/auth/login')) {
+  if (req.method === 'POST' && req.path === '/auth/login') {
     next();
     return;
   }
@@ -126,7 +127,7 @@ export function csrfProtect(req: Request, res: Response, next: NextFunction): vo
 
 // Add request ID
 export function requestId(req: Request, res: Response, next: NextFunction): void {
-  const id = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+  const id = (req.headers['x-request-id'] as string) || randomUUID();
   req.headers['x-request-id'] = id;
   res.setHeader('x-request-id', id);
   next();

@@ -3,7 +3,7 @@ import { Role } from '@depositdesk/shared';
 import { CreateInstitutionSchema, UpdateInstitutionSchema, PaginationSchema } from '@depositdesk/shared';
 import { prisma } from '../../config/prisma';
 import { createError } from '../../middleware/errorHandler';
-import { requireAuth, requireRole, AuthenticatedRequest } from '../../middleware/auth';
+import { requireAuth, requireRole, AuthenticatedRequest, requireInstitutionAccess } from '../../middleware/auth';
 import { writeAuditEvent } from '../../lib/audit';
 import { paginate } from '../../lib/domain';
 
@@ -83,6 +83,7 @@ institutionsRouter.post(
 
       const institution = await prisma.$transaction(async (tx) => {
         const created = await tx.institution.create({ data: body.data });
+        if (authReq.user.role === Role.SCRUTINY_OFFICER) await tx.staffInstitutionScope.create({ data: { userId: authReq.user.id, institutionId: created.id } });
         await writeAuditEvent(tx, {
           actorUserId: authReq.user.id,
           actorRole: authReq.user.role,
@@ -150,6 +151,7 @@ institutionsRouter.patch(
       const existing = await prisma.institution.findUnique({ where: { id } });
       if (!existing) return next(createError(404, 'NOT_FOUND', 'Institution not found'));
 
+      await requireInstitutionAccess(id, req);
       const updated = await prisma.$transaction(async (tx) => {
         const u = await tx.institution.update({ where: { id }, data: body.data });
         await writeAuditEvent(tx, {

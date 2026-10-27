@@ -17,7 +17,7 @@ export default {
           foreground: 'hsl(220 10% 15%)',
         },
         primary: {
-          DEFAULT: 'hsl(220 80% 40%)',
+          DEFAULT: 'hsl(20 85% 40%)',
           foreground: 'hsl(0 0% 100%)',
         },
         secondary: {
@@ -38,7 +38,7 @@ export default {
         },
         border: 'hsl(220 13% 90%)',
         input: 'hsl(220 13% 90%)',
-        ring: 'hsl(220 80% 40%)',
+        ring: 'hsl(20 85% 40%)',
         // Status colors
         status: {
           draft: 'hsl(220 10% 70%)',

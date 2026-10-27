@@ -3,8 +3,14 @@ import { Role } from '@depositdesk/shared';
 import { RecordVerificationSchema } from '@depositdesk/shared';
 import { prisma } from '../../config/prisma';
 import { createError } from '../../middleware/errorHandler';
-import { requireAuth, requireRole, AuthenticatedRequest, requireInstitutionAccess } from '../../middleware/auth';
+import {
+  requireAuth,
+  requireRole,
+  AuthenticatedRequest,
+  requireInstitutionAccess,
+} from '../../middleware/auth';
 import { writeAuditEvent } from '../../lib/audit';
+import { config } from '../../config/env';
 import { paginate } from '../../lib/domain';
 
 export const verificationRouter = Router();
@@ -20,23 +26,77 @@ verificationRouter.post(
       const { id } = req.params;
 
       const instrument = await prisma.instrument.findUnique({ where: { id } });
-      if (!instrument) return next(createError(404, 'NOT_FOUND', 'Instrument not found'));
+      if (!instrument)
+        return next(createError(404, 'NOT_FOUND', 'Instrument not found'));
       await requireInstitutionAccess(instrument.institutionId, req);
 
-      // IU cannot verify their own FDR
-      if (authReq.user.institutionId === instrument.institutionId && authReq.user.role === Role.INSTITUTION_USER) {
-        return next(createError(403, 'FORBIDDEN', 'Institution users cannot verify their own instruments'));
+      const body = RecordVerificationSchema.safeParse(req.body);
+      if (!body.success)
+        return next(
+          createError(
+            422,
+            'VALIDATION_ERROR',
+            'Invalid input',
+            body.error.errors,
+          ),
+        );
+      if (instrument.lifecycleStatus !== 'UNDER_REVIEW')
+        return next(
+          createError(
+            409,
+            'INVALID_STATE',
+            'Pick up the submission for review first.',
+          ),
+        );
+      if (body.data.version !== instrument.version)
+        return next(
+          createError(
+            409,
+            'VERSION_CONFLICT',
+            'Refresh the record before recording a review.',
+          ),
+        );
+      if (
+        config.DEMO_MODE &&
+        body.data.independentVerificationStatus ===
+          'CONFIRMED_BY_AUTHORIZED_SOURCE'
+      ) {
+        return next(
+          createError(
+            422,
+            'DEMO_EVIDENCE_ONLY',
+            'Use Demo simulated for synthetic evidence. No live bank verification is integrated.',
+          ),
+        );
+      }
+      if (
+        !config.DEMO_MODE &&
+        body.data.independentVerificationStatus === 'DEMO_SIMULATED'
+      ) {
+        return next(
+          createError(
+            422,
+            'DEMO_DISABLED',
+            'Simulated evidence is disabled outside demo mode.',
+          ),
+        );
       }
 
-      const body = RecordVerificationSchema.safeParse(req.body);
-      if (!body.success) return next(createError(422, 'VALIDATION_ERROR', 'Invalid input', body.error.errors));
-
       const verification = await prisma.$transaction(async (tx) => {
+        await tx.instrument.update({
+          where: {
+            id,
+            version: body.data.version,
+            lifecycleStatus: 'UNDER_REVIEW',
+          },
+          data: { version: { increment: 1 } },
+        });
         const v = await tx.verification.create({
           data: {
             instrumentId: id,
             documentReviewStatus: body.data.documentReviewStatus as any,
-            independentVerificationStatus: body.data.independentVerificationStatus as any,
+            independentVerificationStatus: body.data
+              .independentVerificationStatus as any,
             sourceType: body.data.sourceType,
             sourceName: body.data.sourceName,
             referenceNumber: body.data.referenceNumber,
@@ -56,7 +116,8 @@ verificationRouter.post(
           changedFields: {
             instrumentId: id,
             documentReviewStatus: body.data.documentReviewStatus,
-            independentVerificationStatus: body.data.independentVerificationStatus,
+            independentVerificationStatus:
+              body.data.independentVerificationStatus,
             sourceName: body.data.sourceName,
             referenceNumber: body.data.referenceNumber,
           },
@@ -68,7 +129,7 @@ verificationRouter.post(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 // GET /verification/queue — SO/AA see verification queue
@@ -79,7 +140,10 @@ verificationRouter.get(
     try {
       const authReq = req as AuthenticatedRequest;
       const page = parseInt(req.query.page as string) || 1;
-      const pageSize = Math.min(parseInt(req.query.pageSize as string) || 20, 100);
+      const pageSize = Math.min(
+        parseInt(req.query.pageSize as string) || 20,
+        100,
+      );
       const skip = (page - 1) * pageSize;
 
       const scopes = await prisma.staffInstitutionScope.findMany({
@@ -88,8 +152,10 @@ verificationRouter.get(
       });
 
       const where = {
-        institutionId: { in: scopes.map(s => s.institutionId) },
-        lifecycleStatus: { in: ['SUBMITTED', 'RESUBMITTED', 'UNDER_REVIEW'] as any[] },
+        institutionId: { in: scopes.map((s) => s.institutionId) },
+        lifecycleStatus: {
+          in: ['SUBMITTED', 'RESUBMITTED', 'UNDER_REVIEW'] as any[],
+        },
       };
 
       const [total, instruments] = await Promise.all([
@@ -111,25 +177,34 @@ verificationRouter.get(
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 // GET /verification/instruments/:id — get all verifications for an instrument
-verificationRouter.get('/instruments/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { id } = req.params;
-    const instrument = await prisma.instrument.findUnique({ where: { id }, select: { institutionId: true } });
-    if (!instrument) return next(createError(404, 'NOT_FOUND', 'Instrument not found'));
-    await requireInstitutionAccess(instrument.institutionId, req);
+verificationRouter.get(
+  '/instruments/:id',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const instrument = await prisma.instrument.findUnique({
+        where: { id },
+        select: { institutionId: true },
+      });
+      if (!instrument)
+        return next(createError(404, 'NOT_FOUND', 'Instrument not found'));
+      await requireInstitutionAccess(instrument.institutionId, req);
 
-    const verifications = await prisma.verification.findMany({
-      where: { instrumentId: id },
-      orderBy: { createdAt: 'desc' },
-      include: { verifiedBy: { select: { id: true, name: true, role: true } } },
-    });
+      const verifications = await prisma.verification.findMany({
+        where: { instrumentId: id },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          verifiedBy: { select: { id: true, name: true, role: true } },
+        },
+      });
 
-    res.json(verifications);
-  } catch (err) {
-    next(err);
-  }
-});
+      res.json(verifications);
+    } catch (err) {
+      next(err);
+    }
+  },
+);

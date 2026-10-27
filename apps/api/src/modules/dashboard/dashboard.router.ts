@@ -1,167 +1,141 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { Role } from '@depositdesk/shared';
-import { prisma } from '../../config/prisma';
+import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { requireAuth, AuthenticatedRequest } from '../../middleware/auth';
-import { deriveDateStatus } from '../../lib/dates';
-import { config, MATURITY_ALERT_DAYS } from '../../config/env';
-import { LifecycleStatus } from '@prisma/client';
-
+import { prisma } from '../../config/prisma';
+import { instrumentRecords } from '../../lib/queries';
+import { scopedAuditWhere } from '../../lib/scope';
+import { operationalSettings } from '../../lib/settings';
 export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth as any);
-
-async function getScopedInstitutionIds(authReq: AuthenticatedRequest): Promise<string[] | null> {
-  const { role, institutionId } = authReq.user;
-  if (role === Role.INSTITUTION_USER) {
-    return institutionId ? [institutionId] : [];
-  }
-  if (role === Role.SCRUTINY_OFFICER || role === Role.APPROVING_AUTHORITY) {
-    const scopes = await prisma.staffInstitutionScope.findMany({
-      where: { userId: authReq.user.id },
-      select: { institutionId: true },
-    });
-    return scopes.map(s => s.institutionId);
-  }
-  return null; // SA sees all
-}
-
-// GET /dashboard/summary
-dashboardRouter.get('/summary', async (req: Request, res: Response, next: NextFunction) => {
+dashboardRouter.get('/summary', async (req, res, next) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    const institutionIds = await getScopedInstitutionIds(authReq);
-
-    const where = institutionIds ? { institutionId: { in: institutionIds } } : {};
-
-    const [
-      totalInstruments,
-      activeInstruments,
-      awaitingVerification,
-      openDiscrepancies,
-      renewalPending,
-      pendingRelease,
-    ] = await Promise.all([
-      prisma.instrument.count({ where }),
-      prisma.instrument.count({ where: { ...where, lifecycleStatus: LifecycleStatus.VERIFIED } }),
-      prisma.instrument.count({ where: { ...where, lifecycleStatus: { in: [LifecycleStatus.SUBMITTED, LifecycleStatus.RESUBMITTED, LifecycleStatus.UNDER_REVIEW] } } }),
-      prisma.discrepancy.count({ where: { status: { in: ['OPEN', 'RESPONDED'] }, instrument: where } }),
-      prisma.releaseRequest.count({ where: { status: { in: ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'RETURNED_FOR_INFORMATION', 'RESUBMITTED'] }, ...(institutionIds ? { institutionId: { in: institutionIds } } : {}) } }),
-      prisma.releaseRequest.count({ where: { status: 'PENDING_AUTHORITY_DECISION', ...(institutionIds ? { institutionId: { in: institutionIds } } : {}) } }),
+    const actor = req as AuthenticatedRequest;
+    const [records, where, settings] = await Promise.all([
+      instrumentRecords(actor),
+      scopedAuditWhere(actor),
+      operationalSettings(),
     ]);
-
-    // Compute date-based counts
-    const instruments = await prisma.instrument.findMany({
-      where: { ...where, lifecycleStatus: { notIn: [LifecycleStatus.REJECTED, LifecycleStatus.CLOSED] } },
-      select: { maturityDate: true, validityEndDate: true },
-    });
-
-    const maxAlertDays = MATURITY_ALERT_DAYS[0] || 90;
-    let dueWithinWindow = 0;
-    let expiredOrMatured = 0;
-
-    for (const inst of instruments) {
-      const derived = deriveDateStatus(inst.maturityDate, inst.validityEndDate, maxAlertDays, config.APP_TIMEZONE);
-      if (derived.dateStatus === 'EXPIRED' || derived.dateStatus === 'MATURED') expiredOrMatured++;
-      if (derived.dateStatus === 'EXPIRING_SOON') dueWithinWindow++;
-    }
-
-    // Lifecycle distribution
-    const lifecycleGroups = await prisma.instrument.groupBy({
-      by: ['lifecycleStatus'],
-      where,
-      _count: { id: true },
-    });
-
-    // Recent activity
+    const current = records.filter(
+      (record) =>
+        !['REJECTED', 'CLOSED'].includes(record.lifecycleStatus) &&
+        record.releaseStatus !== 'COMPLETED' &&
+        record.renewalStatus !== 'COMPLETED',
+    );
+    const count = (status: string) =>
+      current.filter((record) => record.dateStatus === status).length;
+    const distribution: Record<string, number> = {};
+    for (const record of records)
+      distribution[record.lifecycleStatus] =
+        (distribution[record.lifecycleStatus] || 0) + 1;
     const recentActivity = await prisma.auditEvent.findMany({
-      where: institutionIds
-        ? {
-            OR: [
-              { entityType: 'Instrument' },
-              { entityType: 'ReleaseRequest' },
-              { entityType: 'Document' },
-            ],
-          }
-        : undefined,
+      where,
       orderBy: { timestamp: 'desc' },
-      take: 10,
-      include: { actor: { select: { id: true, name: true, role: true } } },
+      take: 8,
+      include: { actor: { select: { name: true } } },
     });
-
     res.json({
-      summary: {
-        totalInstruments,
-        activeInstruments,
-        dueWithinWindow,
-        expiredOrMatured,
-        awaitingVerification,
-        openDiscrepancies,
-        renewalPending,
-        pendingRelease,
+      totalInstruments: records.length,
+      totalValue: records
+        .reduce((sum, record) => sum.plus(record.amount), new Prisma.Decimal(0))
+        .toFixed(2),
+      activeCount: count('ACTIVE'),
+      expiringSoonCount: count('EXPIRING_SOON'),
+      maturedCount: count('MATURED'),
+      expiredCount: count('EXPIRED'),
+      pendingVerificationCount: records.filter((record) =>
+        ['SUBMITTED', 'RESUBMITTED', 'UNDER_REVIEW'].includes(
+          record.lifecycleStatus,
+        ),
+      ).length,
+      discrepancyCount: records.reduce(
+        (sum, record) => sum + record.openDiscrepanciesCount,
+        0,
+      ),
+      renewalPendingCount: current.filter((record) =>
+        ['REQUIRED', 'IN_PROGRESS'].includes(record.renewalStatus),
+      ).length,
+      openReleaseRequestsCount: records.filter((record) =>
+        ['OPEN', 'APPROVED'].includes(record.releaseStatus),
+      ).length,
+      quality: {
+        recordsWithEvidence: records.filter((item) => item.documentsCount > 0)
+          .length,
+        missingEvidence: records.filter(
+          (item) =>
+            item.lifecycleStatus !== 'DRAFT' && item.documentsCount === 0,
+        ).length,
+        unresolvedCases: current.filter(
+          (item) =>
+            item.openDiscrepanciesCount > 0 ||
+            ['REQUIRED', 'IN_PROGRESS'].includes(item.renewalStatus) ||
+            ['OPEN', 'APPROVED'].includes(item.releaseStatus),
+        ).length,
+        reviewIntervalsHours: records
+          .filter(
+            (item) =>
+              item.lifecycleStatus === 'VERIFIED' &&
+              item.verificationRecords?.[0]?.verifiedAt &&
+              item.submittedAt,
+          )
+          .map((item) =>
+            Math.max(
+              0,
+              (new Date(item.verificationRecords[0].verifiedAt).getTime() -
+                new Date(item.submittedAt).getTime()) /
+                3600000,
+            ),
+          ),
       },
-      lifecycleDistribution: lifecycleGroups.map(g => ({
-        status: g.lifecycleStatus,
-        count: g._count.id,
-      })),
+      distribution,
       recentActivity,
+      thresholds: settings.thresholds,
     });
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 });
-
-// GET /dashboard/upcoming-maturities
-dashboardRouter.get('/upcoming-maturities', async (req: Request, res: Response, next: NextFunction) => {
+dashboardRouter.get('/upcoming-maturities', async (req, res, next) => {
   try {
-    const authReq = req as AuthenticatedRequest;
-    const institutionIds = await getScopedInstitutionIds(authReq);
-    const where = institutionIds ? { institutionId: { in: institutionIds } } : {};
-
-    const instruments = await prisma.instrument.findMany({
-      where: { ...where, lifecycleStatus: { notIn: [LifecycleStatus.REJECTED, LifecycleStatus.CLOSED] } },
-      include: { institution: { select: { id: true, name: true } } },
-      orderBy: { maturityDate: 'asc' },
+    const records = await instrumentRecords(req as AuthenticatedRequest, {
+      sortBy: 'maturityDate',
+      sortOrder: 'asc',
     });
-
-    const maxAlertDays = MATURITY_ALERT_DAYS[0] || 90;
-    const buckets: Record<string, any[]> = {
-      '0-7': [],
-      '8-30': [],
-      '31-60': [],
-      '61-90': [],
-      'beyond': [],
-      'matured': [],
-      'expired': [],
-    };
-
-    for (const inst of instruments) {
-      const derived = deriveDateStatus(inst.maturityDate, inst.validityEndDate, maxAlertDays, config.APP_TIMEZONE);
-      const item = {
-        id: inst.id,
-        referenceCode: inst.referenceCode,
-        institution: inst.institution,
-        bankName: inst.bankName,
-        instrumentNumber: inst.instrumentNumber,
-        amount: inst.amount.toString(),
-        maturityDate: inst.maturityDate,
-        validityEndDate: inst.validityEndDate,
-        dateStatus: derived.dateStatus,
-        daysRemaining: derived.daysRemaining,
-        lifecycleStatus: inst.lifecycleStatus,
-      };
-
-      if (derived.dateStatus === 'EXPIRED') buckets.expired.push(item);
-      else if (derived.dateStatus === 'MATURED') buckets.matured.push(item);
-      else if (derived.daysRemaining !== null) {
-        if (derived.daysRemaining <= 7) buckets['0-7'].push(item);
-        else if (derived.daysRemaining <= 30) buckets['8-30'].push(item);
-        else if (derived.daysRemaining <= 60) buckets['31-60'].push(item);
-        else if (derived.daysRemaining <= 90) buckets['61-90'].push(item);
-        else buckets.beyond.push(item);
+    const settings = await operationalSettings();
+    const thresholds = [...settings.thresholds].sort((a, b) => a - b);
+    const buckets: Record<string, any[]> = {};
+    let start = 0;
+    for (const end of thresholds) {
+      buckets[`${start}-${end}`] = [];
+      start = end + 1;
+    }
+    buckets.matured = [];
+    buckets.expired = [];
+    for (const record of records.filter(
+      (item) =>
+        !['DRAFT', 'REJECTED', 'CLOSED'].includes(item.lifecycleStatus) &&
+        item.releaseStatus !== 'COMPLETED' &&
+        item.renewalStatus !== 'COMPLETED',
+    )) {
+      if (record.dateStatus === 'MATURED') buckets.matured.push(record);
+      else if (record.dateStatus === 'EXPIRED') buckets.expired.push(record);
+      else {
+        let from = 0;
+        for (const end of thresholds) {
+          if (record.daysRemaining <= end) {
+            buckets[`${from}-${end}`].push(record);
+            break;
+          }
+          from = end + 1;
+        }
       }
     }
-
-    res.json({ buckets, totals: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k, v.length])) });
-  } catch (err) {
-    next(err);
+    res.json({
+      buckets,
+      totals: Object.fromEntries(
+        Object.entries(buckets).map(([key, rows]) => [key, rows.length]),
+      ),
+    });
+  } catch (error) {
+    next(error);
   }
 });

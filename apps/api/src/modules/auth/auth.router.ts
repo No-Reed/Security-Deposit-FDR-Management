@@ -20,6 +20,8 @@ const authLimiter = rateLimit({
   message: { error: { code: 'RATE_LIMITED', message: 'Too many login attempts. Try again later.' } },
 });
 
+// A real Argon2 hash keeps unknown-user checks on the normal verification path.
+const dummyHash = argon2.hash(randomBytes(32).toString('hex'), { type: argon2.argon2id });
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -36,10 +38,14 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response, next:
     const user = await prisma.user.findUnique({ where: { email } });
 
     // Always hash to prevent timing attacks
-    const dummyHash = '$argon2id$v=19$m=65536,t=3,p=4$dummy';
 
     if (!user || !user.isActive) {
-      await argon2.verify(dummyHash, password).catch(() => {});
+      await argon2.verify(await dummyHash, password);
+      await prisma.auditEvent.create({ data: {
+        action: 'AUTH_LOGIN_FAILURE', entityType: 'User',
+        requestId: req.headers['x-request-id'] as string,
+        metadata: { reason: 'invalid_credentials' },
+      } });
       return next(createError(401, 'INVALID_CREDENTIALS', 'Invalid email or password'));
     }
 
@@ -52,69 +58,47 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response, next:
     const valid = await argon2.verify(user.passwordHash, password);
 
     if (!valid) {
-      const newCount = user.failedLoginCount + 1;
-      const lockedUntil = newCount >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null;
-
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLoginCount: newCount, lockedUntil },
-      });
-
-      await prisma.auditEvent.create({
-        data: {
-          actorUserId: user.id,
-          actorRole: user.role,
-          action: 'AUTH_LOGIN_FAILURE',
-          entityType: 'User',
-          entityId: user.id,
+      await prisma.$transaction(async (tx) => {
+        const failed = await tx.user.update({
+          where: { id: user.id },
+          data: { failedLoginCount: { increment: 1 } },
+        });
+        if (failed.failedLoginCount >= MAX_FAILED_ATTEMPTS) {
+          await tx.user.update({ where: { id: user.id }, data: { lockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) } });
+        }
+        await writeAuditEvent(tx, {
+          actorUserId: user.id, actorRole: user.role, action: 'AUTH_LOGIN_FAILURE',
+          entityType: 'User', entityId: user.id,
           requestId: req.headers['x-request-id'] as string,
-          metadata: { reason: 'invalid_password', failedCount: newCount },
-        },
+          metadata: { reason: 'invalid_password', failedCount: failed.failedLoginCount },
+        });
       });
 
       return next(createError(401, 'INVALID_CREDENTIALS', 'Invalid email or password'));
     }
 
-    // Reset failed attempts
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
-    });
-
-    // Generate CSRF token
+    await new Promise<void>((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
     const csrfToken = randomBytes(32).toString('hex');
-
-    // Regenerate session to prevent fixation
-    req.session.regenerate(async (err) => {
-      if (err) return next(err);
-
-      req.session.userId = user.id;
-      req.session.role = user.role as any;
-      req.session.institutionId = user.institutionId;
-      req.session.csrfToken = csrfToken;
-
-      await prisma.auditEvent.create({
-        data: {
-          actorUserId: user.id,
-          actorRole: user.role,
-          action: 'AUTH_LOGIN_SUCCESS',
-          entityType: 'User',
-          entityId: user.id,
-          requestId: req.headers['x-request-id'] as string,
-          metadata: { ip: req.ip },
-        },
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
       });
-
-      res.json({
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          institutionId: user.institutionId,
-        },
-        csrfToken,
+      await writeAuditEvent(tx, {
+        actorUserId: user.id, actorRole: user.role, action: 'AUTH_LOGIN_SUCCESS',
+        entityType: 'User', entityId: user.id,
+        requestId: req.headers['x-request-id'] as string,
       });
+    });
+    req.session.userId = user.id;
+    req.session.role = user.role as any;
+    req.session.institutionId = user.institutionId;
+    req.session.csrfToken = csrfToken;
+    // Respond only once the Postgres store has persisted the session.
+    await new Promise<void>((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()));
+    res.json({
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, institutionId: user.institutionId },
+      csrfToken,
     });
   } catch (err) {
     next(err);
@@ -123,25 +107,17 @@ authRouter.post('/login', authLimiter, async (req: Request, res: Response, next:
 
 // POST /auth/logout
 authRouter.post('/logout', requireAuth as any, async (req: Request, res: Response, next: NextFunction) => {
-  const userId = req.session.userId;
-  const role = req.session.role;
-
-  req.session.destroy(async (err) => {
-    if (err) return next(err);
-
+  try {
+    const userId = req.session.userId;
+    const role = req.session.role;
+    await new Promise<void>((resolve, reject) => req.session.destroy((error) => error ? reject(error) : resolve()));
+    res.clearCookie('dd.sid', { httpOnly: true, sameSite: 'lax', secure: config.NODE_ENV === 'production', path: '/' });
     await prisma.auditEvent.create({
-      data: {
-        actorUserId: userId,
-        actorRole: role,
-        action: 'AUTH_LOGOUT',
-        entityType: 'User',
-        entityId: userId,
-      },
+      data: { actorUserId: userId, actorRole: role, action: 'AUTH_LOGOUT', entityType: 'User', entityId: userId,
+        requestId: req.headers['x-request-id'] as string },
     });
-
-    res.clearCookie('dd.sid');
     res.json({ ok: true });
-  });
+  } catch (error) { next(error); }
 });
 
 // GET /auth/me
