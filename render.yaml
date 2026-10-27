@@ -1,7 +1,6 @@
 databases:
   - name: depositdesk-db
     databaseName: depositdesk
-    user: postgres
     plan: free
     postgresMajorVersion: 16
 
