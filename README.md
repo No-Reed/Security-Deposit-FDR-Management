@@ -85,18 +85,6 @@ npm run dev
 ```
 Open **[http://localhost:5173](http://localhost:5173)** in your browser. The backend API runs on port `4000`.
 
----
-
-## ☁️ Deployment on Render
-
-This project is pre-configured for one-click deployment using **Render Blueprints** via [`render.yaml`](render.yaml):
-
-1. Push your repository to GitHub.
-2. In the [Render Dashboard](https://dashboard.render.com), click **New +** ➔ **Blueprint**.
-3. Select your repository (`Security-Deposit-FDR-Management`).
-4. Click **Apply**. Render will automatically provision:
-   * **Managed PostgreSQL 16 Database** (`depositdesk-db`)
-   * **Unified Web Service** (`depositdesk`) serving both the API and compiled React frontend on a single URL.
 
 ---
 
