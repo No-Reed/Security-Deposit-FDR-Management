@@ -9,10 +9,12 @@ services:
     name: depositdesk
     env: node
     plan: free
-    buildCommand: npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm run db:migrate && npm run db:seed && npm run start
     healthCheckPath: /api/v1/health
     envVars:
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
       - key: NODE_ENV
         value: production
       - key: DEMO_MODE
