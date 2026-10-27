@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { Role } from '@depositdesk/shared';
 import {
+  PaginationSchema,
   CreateDiscrepancySchema,
   ResolveDiscrepancySchema,
 } from '@depositdesk/shared';
@@ -128,12 +129,8 @@ discrepanciesRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const authReq = req as AuthenticatedRequest;
-      const page = parseInt(req.query.page as string) || 1;
-      const pageSize = Math.min(
-        parseInt(req.query.pageSize as string) || 20,
-        100,
-      );
-      const skip = (page - 1) * pageSize;
+      const {page,pageSize}=PaginationSchema.parse(req.query);
+    const skip = (page - 1) * pageSize;
       const { role, institutionId } = authReq.user;
 
       let where: any = {};
@@ -155,7 +152,10 @@ discrepanciesRouter.get(
         };
       }
 
-      if (req.query.status) where.status = req.query.status;
+      if (req.query.status) {
+      if(!['OPEN','RESPONDED','RESOLVED','DISMISSED','UNRESOLVED'].includes(String(req.query.status))) throw createError(422,'INVALID_STATUS','Invalid discrepancy filter.');
+      where.status=req.query.status==='UNRESOLVED'?{in:['OPEN','RESPONDED']}:req.query.status;
+    }
       if (req.query.instrumentId) where.instrumentId = req.query.instrumentId;
 
       const [total, discrepancies] = await Promise.all([

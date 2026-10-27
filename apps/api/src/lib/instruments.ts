@@ -18,12 +18,12 @@ export function documentView(document: any) {
   };
 }
 
-export function instrumentView(instrument: any) {
+export function instrumentView(instrument: any, runtime = { alertDays: MATURITY_ALERT_DAYS[0] || 90, timezone: config.APP_TIMEZONE }) {
   const date = deriveDateStatus(
     instrument.maturityDate,
     instrument.validityEndDate,
-    MATURITY_ALERT_DAYS[0] || 90,
-    config.APP_TIMEZONE,
+    runtime.alertDays,
+    runtime.timezone,
   );
   const latest = instrument.verifications?.find(
     (record: any) =>

@@ -4,11 +4,9 @@ Prototype for AICTE problem statement **26265**. This is not an official AICTE s
 
 ## Implementation status
 
-This repository contains useful UI/API foundations, but the complete administrative lifecycle is still under repair. The original completion claims were not supported by end-to-end tests. Read [IMPLEMENTATION_AUDIT.md](IMPLEMENTATION_AUDIT.md) and [PROGRESS.md](PROGRESS.md) for the remaining work.
+The core prototype now has database-backed submission and scrutiny, scoped dashboard/registries, maturity reminders and escalations, linked replacements, release/refund requests through review/decision/completion, secure evidence history, scoped audit/CSV reports, notifications and administration. The interface follows the supplied case-management reference with orange accents, compact navigation/tables, filters and a selected-record preview.
 
-The foundation and submission/scrutiny slices now support real sessions, validated drafts and corrections, private document upload/download, complete submission snapshots, officer pickup, discrepancies and responses, resubmission, recorded review outcomes and scrutiny decisions. Registry, detail, submission, scrutiny and discrepancy screens use real API records with visible loading/error/retry states. They no longer substitute sample records or successful writes when requests fail.
-
-Dashboard/maturity/renewal tracking, release-request UI, reports and administration still need their remaining workflow/contract repairs. The complete MVP is not yet accepted. Signing in opens the working registry. The full case-management visual redesign remains a later step.
+See [ACCEPTANCE.md](ACCEPTANCE.md) for verification evidence, remaining deployment limitations and teammate checks. [IMPLEMENTATION_AUDIT.md](IMPLEMENTATION_AUDIT.md) preserves the original assessment; [PROGRESS.md](PROGRESS.md) records delivery status. This is a synthetic-data MVP, not a production or regulatory certification.
 
 ## Requirements
 
@@ -41,13 +39,18 @@ npm.cmd run dev
 
 Open http://localhost:5173. The API listens on http://localhost:4000 and the frontend proxies `/api` to it. A fresh database is required for initial migration deployment. Do not apply these migrations blindly to a populated database created outside the migration history; back up and plan a baseline first.
 
-Seeding creates eight synthetic institutions, 30 instruments (including three replacement records) and seven accounts, prints a different generated password for each account once, and refuses production execution. `DEMO_PASSWORD` may be supplied locally before seeding; there is no committed/default password. The seed refuses a nonempty instrument database before changing credentials. Use reset only for disposable local demo data. Seed dates use the current calendar date in Asia/Kolkata.
+Seeding creates eight synthetic institutions, 30 instruments (including three replacement records) and twelve accounts, prints a different generated password for each account once, and refuses production execution. `DEMO_PASSWORD` may be supplied locally before seeding; there is no committed/default password. The seed refuses a nonempty instrument database before changing credentials. Use reset only for disposable local demo data. Seed dates use the current calendar date in Asia/Kolkata. The seed also creates private PDF fixtures explicitly marked synthetic, complete submission snapshots and captured release checklists. Existing populated databases are preserved; apply migrations without reseeding.
 
 | Role | Seeded email |
 | --- | --- |
 | Institution A | vikram@sunrise.invalid |
 | Institution B | meera@coastal.invalid |
 | Institution C | sanjay@hillside.invalid |
+| Northern institution | registrar@northern.invalid |
+| Southern institution | registrar@southern.invalid |
+| Eastern institution | registrar@eastern.invalid |
+| Central institution | registrar@central.invalid |
+| Western institution | registrar@western.invalid |
 | Scrutiny Officer | officer.priya@depositdesk.invalid |
 | Scrutiny Officer | officer.rahul@depositdesk.invalid |
 | Approving Authority | authority.anita@depositdesk.invalid |
@@ -63,9 +66,9 @@ On Windows, stop the local development server before running commands that regen
 npm.cmd run verify
 ```
 
-This generates Prisma's client, lints all workspaces, builds shared types, checks TypeScript, runs unit tests, and builds API/frontend production output. Prisma's first generation needs access to its runtime download host. Passing this command does not imply database tests or the entire MVP pass.
+This generates Prisma's client, lints all workspaces, checks TypeScript, runs unit/API tests and real PostgreSQL workflow tests, then builds API/frontend production output. Start `db-test` and configure `DATABASE_URL_TEST` first. Prisma's first generation needs access to its runtime download host. Verification resets only the isolated test database; it preserves development data.
 
-For real database-backed authentication tests, first start `db-test` above and configure `DATABASE_URL_TEST` in root `.env`:
+To run the database workflow tests separately:
 
 ```powershell
 npm.cmd run test:integration
@@ -73,7 +76,7 @@ npm.cmd run test:integration
 
 This command **resets only a separate local database named depositdesk_test**, deploys migrations and runs API tests. It refuses production, nonlocal targets, other database names and a matching development database. It never resets the development database. Integration coverage includes authentication and audit integrity plus the complete submission/correction/scrutiny cycle: version conflicts and concurrent edits, invalid/oversized/forged uploads, authorized downloads, document supersession, original/resubmitted snapshots, demo verification, terminal rejection, and search/pagination. Test uploads are isolated under `tmp/test-uploads`.
 
-Unit tests include date-status precedence, midnight IST boundaries, CUID validation, submission validation, renewal/release helpers and CSV formula neutralization. Integration tests are intentionally excluded from the unit command and must be reported separately.
+Unit tests include date-status precedence, midnight IST boundaries, CUID validation, submission validation, renewal/release helpers and CSV formula neutralization. `npm run test` runs the fast unit/API boundary suite; `npm run verify` includes both suites. Database tests additionally cover reminders, escalation cadence, renewal chains, release checklist/decisions/completion, maker-checker, concurrent requests/closure, scoped exports and administration.
 
 To build and run compiled output:
 
@@ -97,6 +100,23 @@ npm.cmd run start -w apps/api
 
 The current registry derives date filters before paginating the authorized dataset; this is suitable for the small prototype dataset. Large-scale database-side filtering remains future work.
 
+## Five-minute team demo
+
+Use synthetic records/files only. Sign out between roles; passwords come from your local seed output.
+
+1. **Institution user:** show the demo banner, own-institution registry and denied cross-institution URL. Register an instrument, show issue-after-maturity validation, correct it, attach a synthetic PDF and submit.
+2. **Scoped officer:** open Scrutiny, start review, inspect the separate submitted/document/independent-verification blocks. Flag a discrepancy with a reason; the institution receives an action-required record.
+3. **Institution then officer:** correct and resubmit, then resolve the discrepancy and save a DEMO_SIMULATED review outcome. Finish scrutiny with notes. Inspect the original/corrected snapshots and evidence versions in History.
+4. **Dashboard and reminders:** follow an approaching-deadline card to the matching filtered registry. As administrator, run the maturity check twice; inspect in-app notifications to show deduplication. Saved thresholds and escalation intervals apply on the next read/run. Scheduled checks run daily at 06:00 Asia/Kolkata while the API is running.
+5. **Replacement:** as institution user, open a matured record → Related records → Create replacement. Save/submit the new evidence through its own scrutiny flow. The predecessor remains intact and links both ways.
+6. **Release:** on a VERIFIED record with no current/completed release, create a request, add supporting evidence and Submit. As officer, Start review, check required captured items, add notes and Forward; optionally Return for information, then institution Resubmit. Resubmission/evidence changes reset the review checklist.
+7. **Authority:** open the forwarded request, approve or reject with a reason. Approval alone does not mark it completed. A scoped officer/authority records a separate completion reference, calendar date and notes. This records synthetic external evidence; it performs no financial action.
+8. **Audit/export:** inspect the scoped timeline and audit log, download a CSV report. Administrators can manage accounts, institution mappings, staff scopes, reminders and demo checklist configuration; they cannot make business decisions.
+
+## Prototype measurements
+
+Dashboard quality indicators use persisted records: evidence coverage, unresolved discrepancies and recorded review intervals. A new submission snapshot preserves exact submitted values, rather than claiming that document contents are authentic. Record reminder counts on the first and repeated check, overdue cases, and the number of manual tracking steps during the demo. There is no real-world manual baseline here, so no percentage improvement or guaranteed turnaround is claimed. See [ACCEPTANCE.md](ACCEPTANCE.md) for reproducible synthetic checks.
+
 ## Reset disposable local demo data
 
 ```powershell
@@ -111,9 +131,9 @@ This deletes and recreates only the local database named depositdesk outside pro
 - Passwords use Argon2id; repeated failed attempts lock the account temporarily. Session identity is reloaded from the database so disabled users lose access.
 - Prisma-generated CUIDs are validated consistently in shared request schemas.
 - Database migrations enforce one open release request, positive instrument amounts, issue/maturity ordering, document parent presence and append-only audit events. Normal app credentials must not own schema/DDL privileges in deployment.
-- Some later workflow audit/authorization checks remain incomplete; a database trigger alone does not make the product secure or compliant.
-- Dashboard/maturity contracts, reports, release UI, renewal UI, saved reminder settings and UI redesign remain scheduled. Real bank/AICTE integration, email delivery, scanning integration, PDF reports and object storage deployment are not implemented.
-- The intended UI follows the supplied case-management reference: light surfaces, orange accents, sidebar navigation, compact filtered tables, status badges and tabbed detail/timeline panels.
+- Business changes pair audit events with their database transactions. Captured release checklists cannot be bypassed at approval; a reviewer cannot decide the same request even after a role change.
+- Real bank/AICTE integration, email delivery, scanning integration, PDF reports, calendar view and object storage deployment are not implemented. Uploads use private local storage and are labelled not malware-scanned.
+- The implemented UI follows the supplied case-management reference: light surfaces, orange accents, sidebar navigation, compact filtered tables, status badges and tabbed detail/timeline panels.
 
 ## Troubleshooting
 

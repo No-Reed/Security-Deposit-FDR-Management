@@ -774,10 +774,28 @@ export const InstrumentDetailPage: React.FC = () => {
                   Purpose: snapshot.payload.purpose,
                   Beneficiary: snapshot.payload.beneficiaryDetails,
                   'Correction summary': snapshot.payload.corrections,
-                }).map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd>{String(value ?? 'Not specified')}</dd></div>)}
+                }).map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-slate-500">{label}</dt>
+                    <dd>{String(value ?? 'Not specified')}</dd>
+                  </div>
+                ))}
               </dl>
               <ul className="mt-3 space-y-1 text-sm">
-                {(snapshot.payload.documents || []).map((evidence: any) => <li key={evidence.id}><a className="text-blue-700 underline" href={api.documents.downloadUrl(evidence.id)}>Evidence: {instrument.documents.find(doc => doc.id === evidence.id)?.originalFilename || evidence.category} · Version {evidence.version}</a></li>)}
+                {(snapshot.payload.documents || []).map((evidence: any) => (
+                  <li key={evidence.id}>
+                    <a
+                      className="text-blue-700 underline"
+                      href={api.documents.downloadUrl(evidence.id)}
+                    >
+                      Evidence:{' '}
+                      {instrument.documents.find(
+                        (doc) => doc.id === evidence.id,
+                      )?.originalFilename || evidence.category}{' '}
+                      · Version {evidence.version}
+                    </a>
+                  </li>
+                ))}
               </ul>
             </details>
           ))}
@@ -795,7 +813,57 @@ export const InstrumentDetailPage: React.FC = () => {
       )}
       {tab === 'Related records' && (
         <section className="card-notion p-4 space-y-3">
+          {user?.role === Role.APPROVING_AUTHORITY &&
+            state === 'VERIFIED' &&
+            !['OPEN', 'APPROVED'].includes(instrument.releaseStatus) && (
+              <div className="space-y-2 border-b pb-4">
+                <h2 className="font-semibold">Administrative closure</h2>
+                <label className="block text-sm">
+                  Closure reason
+                  <textarea
+                    className="input-notion"
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="btn-outline"
+                  disabled={busy || needsNotes}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        'Close this instrument? This records an administrative closure and preserves its history.',
+                      )
+                    )
+                      run(
+                        () =>
+                          api.instruments.close(
+                            instrument.id,
+                            instrument.version,
+                            notes,
+                          ),
+                        'Instrument closed.',
+                      );
+                  }}
+                >
+                  Close instrument
+                </button>
+              </div>
+            )}
           <h2 className="font-semibold">Renewal / replacement chain</h2>
+          {own && !instrument.successorInstrument && state !== 'DRAFT' && (
+            <Link
+              className="btn-primary inline-flex"
+              to={`/instruments/new?renewFrom=${instrument.id}`}
+            >
+              Create replacement
+            </Link>
+          )}
+          <p className="text-xs text-slate-500">
+            Replacement records preserve the previous history and go through
+            their own submission and review. Applicable eligibility conditions
+            require authorized review.
+          </p>
           {instrument.predecessorInstrument ? (
             <Link
               className="text-blue-700 block"
@@ -817,6 +885,18 @@ export const InstrumentDetailPage: React.FC = () => {
             <p className="text-sm">No replacement linked.</p>
           )}
           <h2 className="font-semibold">Release requests</h2>
+          {own &&
+            state === 'VERIFIED' &&
+            !['OPEN', 'APPROVED', 'COMPLETED'].includes(
+              instrument.releaseStatus,
+            ) && (
+              <Link
+                className="btn-primary inline-flex"
+                to={`/releases?instrumentId=${instrument.id}`}
+              >
+                Create release request
+              </Link>
+            )}
           {instrument.releaseRequests.map((request) => (
             <p key={request.id} className="text-sm">
               {request.requestType}: {request.status}

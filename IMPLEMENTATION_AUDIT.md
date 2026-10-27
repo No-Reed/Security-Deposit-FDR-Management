@@ -1,5 +1,7 @@
 # DepositDesk implementation audit and ordered delivery plan
 
+**Historical baseline:** the gaps below describe the initial checkout. See [ACCEPTANCE.md](ACCEPTANCE.md) and [PROGRESS.md](PROGRESS.md) for the completed implementation and current verification.
+
 Audit date: 27 October 2026 (Asia/Kolkata).
 
 ## Scope and evidence

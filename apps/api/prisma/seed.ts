@@ -1,17 +1,21 @@
 /**
  * DepositDesk Demo Seed Script
- * 
+ *
  * Generates realistic synthetic demo data for all roles and scenarios.
  * Uses DEMO_PASSWORD env var if set, otherwise generates random passwords.
  * REFUSES to run in production.
- * 
+ *
  * All data is synthetic. Bank names, institutions, and reference numbers
  * are fictional and clearly labelled as demo data.
  */
 
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { config } from '../src/config/env';
+import { submissionSnapshot } from '../src/lib/instruments';
 import { todayInTz } from '../src/lib/dates';
 
 const prisma = new PrismaClient();
@@ -23,7 +27,12 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 function randomPassword(): string {
-  return randomBytes(12).toString('base64url').replace(/[^a-zA-Z0-9]/g, '').slice(0, 14) + 'A1!';
+  return (
+    randomBytes(12)
+      .toString('base64url')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 14) + 'A1!'
+  );
 }
 
 // Date helpers — relative to today so scenarios stay valid
@@ -37,8 +46,12 @@ function addDays(d: Date, days: number): Date {
   return r;
 }
 
-function daysAgo(n: number): Date { return addDays(today(), -n); }
-function daysFromNow(n: number): Date { return addDays(today(), n); }
+function daysAgo(n: number): Date {
+  return addDays(today(), -n);
+}
+function daysFromNow(n: number): Date {
+  return addDays(today(), n);
+}
 
 let idxCounter = 0;
 function nextRef(prefix: string): string {
@@ -47,24 +60,101 @@ function nextRef(prefix: string): string {
 }
 
 async function main() {
-  if (await prisma.instrument.count() > 0) {
-    throw new Error('Seed requires an empty demo database. Use the explicitly confirmed local demo reset command to rebuild it.');
+  if ((await prisma.instrument.count()) > 0) {
+    throw new Error(
+      'Seed requires an empty demo database. Use the explicitly confirmed local demo reset command to rebuild it.',
+    );
   }
   console.log('\n🌱 DepositDesk Demo Seed Starting...\n');
-  console.log('⚠️  DEMO DATA — All institutions, banks, and instruments are synthetic.\n');
+  console.log(
+    '⚠️  DEMO DATA — All institutions, banks, and instruments are synthetic.\n',
+  );
 
   // Read or generate passwords
   const DEMO_PASSWORD = process.env.DEMO_PASSWORD;
   const passwords: Record<string, string> = {};
 
   const userDefs = [
-    { key: 'sa', name: 'Admin User', email: 'admin@depositdesk.invalid', role: 'SYSTEM_ADMIN' },
-    { key: 'so1', name: 'Officer Priya Sharma', email: 'officer.priya@depositdesk.invalid', role: 'SCRUTINY_OFFICER' },
-    { key: 'so2', name: 'Officer Rahul Verma', email: 'officer.rahul@depositdesk.invalid', role: 'SCRUTINY_OFFICER' },
-    { key: 'aa', name: 'Authority Anita Mehta', email: 'authority.anita@depositdesk.invalid', role: 'APPROVING_AUTHORITY' },
-    { key: 'iu1', name: 'User Vikram Patel (Sunrise Tech)', email: 'vikram@sunrise.invalid', role: 'INSTITUTION_USER', institutionKey: 'sunrise' },
-    { key: 'iu2', name: 'User Meera Nair (Coastal Engineering)', email: 'meera@coastal.invalid', role: 'INSTITUTION_USER', institutionKey: 'coastal' },
-    { key: 'iu3', name: 'User Sanjay Kumar (Hillside Medical)', email: 'sanjay@hillside.invalid', role: 'INSTITUTION_USER', institutionKey: 'hillside' },
+    {
+      key: 'sa',
+      name: 'Admin User',
+      email: 'admin@depositdesk.invalid',
+      role: 'SYSTEM_ADMIN',
+    },
+    {
+      key: 'so1',
+      name: 'Officer Priya Sharma',
+      email: 'officer.priya@depositdesk.invalid',
+      role: 'SCRUTINY_OFFICER',
+    },
+    {
+      key: 'so2',
+      name: 'Officer Rahul Verma',
+      email: 'officer.rahul@depositdesk.invalid',
+      role: 'SCRUTINY_OFFICER',
+    },
+    {
+      key: 'aa',
+      name: 'Authority Anita Mehta',
+      email: 'authority.anita@depositdesk.invalid',
+      role: 'APPROVING_AUTHORITY',
+    },
+    {
+      key: 'iu1',
+      name: 'User Vikram Patel (Sunrise Tech)',
+      email: 'vikram@sunrise.invalid',
+      role: 'INSTITUTION_USER',
+      institutionKey: 'sunrise',
+    },
+    {
+      key: 'iu2',
+      name: 'User Meera Nair (Coastal Engineering)',
+      email: 'meera@coastal.invalid',
+      role: 'INSTITUTION_USER',
+      institutionKey: 'coastal',
+    },
+    {
+      key: 'iu3',
+      name: 'User Sanjay Kumar (Hillside Medical)',
+      email: 'sanjay@hillside.invalid',
+      role: 'INSTITUTION_USER',
+      institutionKey: 'hillside',
+    },
+    {
+      key: 'iuNorthern',
+      name: 'Demo Northern Registrar',
+      email: 'registrar@northern.invalid',
+      role: 'INSTITUTION_USER',
+      institutionKey: 'northern',
+    },
+    {
+      key: 'iuSouthern',
+      name: 'Demo Southern Registrar',
+      email: 'registrar@southern.invalid',
+      role: 'INSTITUTION_USER',
+      institutionKey: 'southern',
+    },
+    {
+      key: 'iuEastern',
+      name: 'Demo Eastern Registrar',
+      email: 'registrar@eastern.invalid',
+      role: 'INSTITUTION_USER',
+      institutionKey: 'eastern',
+    },
+    {
+      key: 'iuCentral',
+      name: 'Demo Central Registrar',
+      email: 'registrar@central.invalid',
+      role: 'INSTITUTION_USER',
+      institutionKey: 'central',
+    },
+    {
+      key: 'iuWestern',
+      name: 'Demo Western Registrar',
+      email: 'registrar@western.invalid',
+      role: 'INSTITUTION_USER',
+      institutionKey: 'western',
+    },
   ] as const;
 
   for (const u of userDefs) {
@@ -73,7 +163,7 @@ async function main() {
 
   // ─── Institutions ────────────────────────────────────────────────────────────
   console.log('Creating institutions...');
-  
+
   const institutionData = [
     {
       key: 'sunrise',
@@ -176,8 +266,11 @@ async function main() {
   const users: Record<string, any> = {};
 
   for (const u of userDefs) {
-    const institutionId = 'institutionKey' in u ? institutions[u.institutionKey]?.id : null;
-    const passwordHash = await argon2.hash(passwords[u.key], { type: argon2.argon2id });
+    const institutionId =
+      'institutionKey' in u ? institutions[u.institutionKey]?.id : null;
+    const passwordHash = await argon2.hash(passwords[u.key], {
+      type: argon2.argon2id,
+    });
     users[u.key] = await prisma.user.upsert({
       where: { email: u.email },
       create: {
@@ -197,7 +290,9 @@ async function main() {
   for (const officerId of [users.so1.id, users.so2.id, users.aa.id]) {
     for (const instId of allInstitutionIds) {
       await prisma.staffInstitutionScope.upsert({
-        where: { userId_institutionId: { userId: officerId, institutionId: instId } },
+        where: {
+          userId_institutionId: { userId: officerId, institutionId: instId },
+        },
         create: { userId: officerId, institutionId: instId },
         update: {},
       });
@@ -216,19 +311,56 @@ async function main() {
     { key: 'appVersion', value: '1.0.0-demo' },
   ];
   for (const s of settings) {
-    await prisma.systemSetting.upsert({ where: { key: s.key }, create: s, update: s });
+    await prisma.systemSetting.upsert({
+      where: { key: s.key },
+      create: s,
+      update: s,
+    });
   }
 
   // ─── Release Checklist Items ─────────────────────────────────────────────────
   const checklistItems = [
-    { label: 'NOC from competent authority obtained (Demo policy — confirm with domain expert)', isRequired: true, sortOrder: 1, isActive: true },
-    { label: 'Outstanding dues cleared as per records (Demo policy — confirm with domain expert)', isRequired: true, sortOrder: 2, isActive: true },
-    { label: 'Affiliation status verified (Demo policy — confirm with domain expert)', isRequired: true, sortOrder: 3, isActive: true },
-    { label: 'Bank communication attached (Demo policy — confirm with domain expert)', isRequired: false, sortOrder: 4, isActive: true },
-    { label: 'Institution authorization letter submitted (Demo policy — confirm with domain expert)', isRequired: false, sortOrder: 5, isActive: true },
+    {
+      label:
+        'NOC from competent authority obtained (Demo policy — confirm with domain expert)',
+      isRequired: true,
+      sortOrder: 1,
+      isActive: true,
+    },
+    {
+      label:
+        'Outstanding dues cleared as per records (Demo policy — confirm with domain expert)',
+      isRequired: true,
+      sortOrder: 2,
+      isActive: true,
+    },
+    {
+      label:
+        'Affiliation status verified (Demo policy — confirm with domain expert)',
+      isRequired: true,
+      sortOrder: 3,
+      isActive: true,
+    },
+    {
+      label:
+        'Bank communication attached (Demo policy — confirm with domain expert)',
+      isRequired: false,
+      sortOrder: 4,
+      isActive: true,
+    },
+    {
+      label:
+        'Institution authorization letter submitted (Demo policy — confirm with domain expert)',
+      isRequired: false,
+      sortOrder: 5,
+      isActive: true,
+    },
   ];
   await prisma.releaseChecklistItem.deleteMany();
   await prisma.releaseChecklistItem.createMany({ data: checklistItems });
+  const savedChecklistItems = await prisma.releaseChecklistItem.findMany({
+    orderBy: { sortOrder: 'asc' },
+  });
   console.log('  ✓ Checklist items');
 
   // ─── Instruments ─────────────────────────────────────────────────────────────
@@ -236,13 +368,24 @@ async function main() {
 
   const fictionalBanks = [
     { name: 'Demo National Bank', branch: 'Demo Main Branch, Mumbai' },
-    { name: 'Demo State Co-operative Bank', branch: 'Demo Sector 5 Branch, Pune' },
-    { name: 'Fictional Commerce Bank', branch: 'Demo Connaught Place Branch, Delhi' },
+    {
+      name: 'Demo State Co-operative Bank',
+      branch: 'Demo Sector 5 Branch, Pune',
+    },
+    {
+      name: 'Fictional Commerce Bank',
+      branch: 'Demo Connaught Place Branch, Delhi',
+    },
     { name: 'Sample Gramin Bank', branch: 'Demo Andheri Branch, Mumbai' },
-    { name: 'Demo Regional Rural Bank', branch: 'Demo HSR Layout Branch, Bangalore' },
+    {
+      name: 'Demo Regional Rural Bank',
+      branch: 'Demo HSR Layout Branch, Bangalore',
+    },
   ];
 
-  function getBank(idx: number) { return fictionalBanks[idx % fictionalBanks.length]; }
+  function getBank(idx: number) {
+    return fictionalBanks[idx % fictionalBanks.length];
+  }
 
   type InstrumentSpec = {
     key: string;
@@ -259,61 +402,319 @@ async function main() {
 
   const instrumentSpecs: InstrumentSpec[] = [
     // Approaching maturity (various thresholds)
-    { key: 'i1', institutionKey: 'sunrise', type: 'FDR', amount: '500000.00', issueOffset: 365, maturityOffset: 6, lifecycleStatus: 'VERIFIED', bankIdx: 0 },
-    { key: 'i2', institutionKey: 'coastal', type: 'FDR', amount: '750000.00', issueOffset: 365, maturityOffset: 14, lifecycleStatus: 'VERIFIED', bankIdx: 1 },
-    { key: 'i3', institutionKey: 'hillside', type: 'FDR', amount: '1000000.00', issueOffset: 365, maturityOffset: 29, lifecycleStatus: 'VERIFIED', bankIdx: 2 },
-    { key: 'i4', institutionKey: 'northern', type: 'SECURITY_DEPOSIT', amount: '300000.00', issueOffset: 365, maturityOffset: 59, lifecycleStatus: 'VERIFIED', bankIdx: 3 },
-    { key: 'i5', institutionKey: 'southern', type: 'FDR', amount: '600000.00', issueOffset: 365, maturityOffset: 88, lifecycleStatus: 'VERIFIED', bankIdx: 4 },
+    {
+      key: 'i1',
+      institutionKey: 'sunrise',
+      type: 'FDR',
+      amount: '500000.00',
+      issueOffset: 365,
+      maturityOffset: 7,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 0,
+    },
+    {
+      key: 'i2',
+      institutionKey: 'coastal',
+      type: 'FDR',
+      amount: '750000.00',
+      issueOffset: 365,
+      maturityOffset: 15,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 1,
+    },
+    {
+      key: 'i3',
+      institutionKey: 'hillside',
+      type: 'FDR',
+      amount: '1000000.00',
+      issueOffset: 365,
+      maturityOffset: 30,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 2,
+    },
+    {
+      key: 'i4',
+      institutionKey: 'northern',
+      type: 'SECURITY_DEPOSIT',
+      amount: '300000.00',
+      issueOffset: 365,
+      maturityOffset: 60,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 3,
+    },
+    {
+      key: 'i5',
+      institutionKey: 'southern',
+      type: 'FDR',
+      amount: '600000.00',
+      issueOffset: 365,
+      maturityOffset: 90,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 4,
+    },
 
     // Matured instruments
-    { key: 'i6', institutionKey: 'eastern', type: 'FDR', amount: '450000.00', issueOffset: 730, maturityOffset: -15, lifecycleStatus: 'VERIFIED', bankIdx: 0 },
-    { key: 'i7', institutionKey: 'central', type: 'SECURITY_DEPOSIT', amount: '800000.00', issueOffset: 730, maturityOffset: -30, lifecycleStatus: 'VERIFIED', bankIdx: 1 },
-    { key: 'i8', institutionKey: 'western', type: 'FDR', amount: '250000.00', issueOffset: 365, maturityOffset: -5, validityEndOffset: -3, lifecycleStatus: 'VERIFIED', bankIdx: 2 },
+    {
+      key: 'i6',
+      institutionKey: 'eastern',
+      type: 'FDR',
+      amount: '450000.00',
+      issueOffset: 730,
+      maturityOffset: -15,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 0,
+    },
+    {
+      key: 'i7',
+      institutionKey: 'central',
+      type: 'SECURITY_DEPOSIT',
+      amount: '800000.00',
+      issueOffset: 730,
+      maturityOffset: -30,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 1,
+    },
+    {
+      key: 'i8',
+      institutionKey: 'western',
+      type: 'FDR',
+      amount: '250000.00',
+      issueOffset: 365,
+      maturityOffset: -5,
+      validityEndOffset: -3,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 2,
+    },
 
     // Under review / pending verification
-    { key: 'i9', institutionKey: 'sunrise', type: 'FDR', amount: '350000.00', issueOffset: 30, maturityOffset: 335, lifecycleStatus: 'SUBMITTED', bankIdx: 3 },
-    { key: 'i10', institutionKey: 'coastal', type: 'SECURITY_DEPOSIT', amount: '420000.00', issueOffset: 25, maturityOffset: 340, lifecycleStatus: 'UNDER_REVIEW', bankIdx: 4 },
-    { key: 'i11', institutionKey: 'hillside', type: 'FDR', amount: '550000.00', issueOffset: 20, maturityOffset: 345, lifecycleStatus: 'UNDER_REVIEW', bankIdx: 0 },
-    { key: 'i12', institutionKey: 'northern', type: 'FDR', amount: '670000.00', issueOffset: 15, maturityOffset: 350, lifecycleStatus: 'SUBMITTED', bankIdx: 1 },
+    {
+      key: 'i9',
+      institutionKey: 'sunrise',
+      type: 'FDR',
+      amount: '350000.00',
+      issueOffset: 30,
+      maturityOffset: 335,
+      lifecycleStatus: 'SUBMITTED',
+      bankIdx: 3,
+    },
+    {
+      key: 'i10',
+      institutionKey: 'coastal',
+      type: 'SECURITY_DEPOSIT',
+      amount: '420000.00',
+      issueOffset: 25,
+      maturityOffset: 340,
+      lifecycleStatus: 'UNDER_REVIEW',
+      bankIdx: 4,
+    },
+    {
+      key: 'i11',
+      institutionKey: 'hillside',
+      type: 'FDR',
+      amount: '550000.00',
+      issueOffset: 20,
+      maturityOffset: 345,
+      lifecycleStatus: 'UNDER_REVIEW',
+      bankIdx: 0,
+    },
+    {
+      key: 'i12',
+      institutionKey: 'northern',
+      type: 'FDR',
+      amount: '670000.00',
+      issueOffset: 15,
+      maturityOffset: 350,
+      lifecycleStatus: 'SUBMITTED',
+      bankIdx: 1,
+    },
 
     // Action required
-    { key: 'i13', institutionKey: 'sunrise', type: 'FDR', amount: '200000.00', issueOffset: 60, maturityOffset: 305, lifecycleStatus: 'ACTION_REQUIRED', bankIdx: 2 },
-    { key: 'i14', institutionKey: 'southern', type: 'SECURITY_DEPOSIT', amount: '900000.00', issueOffset: 45, maturityOffset: 320, lifecycleStatus: 'ACTION_REQUIRED', bankIdx: 3 },
+    {
+      key: 'i13',
+      institutionKey: 'sunrise',
+      type: 'FDR',
+      amount: '200000.00',
+      issueOffset: 60,
+      maturityOffset: 305,
+      lifecycleStatus: 'ACTION_REQUIRED',
+      bankIdx: 2,
+    },
+    {
+      key: 'i14',
+      institutionKey: 'southern',
+      type: 'SECURITY_DEPOSIT',
+      amount: '900000.00',
+      issueOffset: 45,
+      maturityOffset: 320,
+      lifecycleStatus: 'ACTION_REQUIRED',
+      bankIdx: 3,
+    },
 
     // Draft
-    { key: 'i15', institutionKey: 'eastern', type: 'FDR', amount: '125000.00', issueOffset: 5, maturityOffset: 360, lifecycleStatus: 'DRAFT', bankIdx: 4 },
+    {
+      key: 'i15',
+      institutionKey: 'eastern',
+      type: 'FDR',
+      amount: '125000.00',
+      issueOffset: 5,
+      maturityOffset: 360,
+      lifecycleStatus: 'DRAFT',
+      bankIdx: 4,
+    },
 
     // Rejected
-    { key: 'i16', institutionKey: 'western', type: 'FDR', amount: '175000.00', issueOffset: 90, maturityOffset: 275, lifecycleStatus: 'REJECTED', bankIdx: 0 },
+    {
+      key: 'i16',
+      institutionKey: 'western',
+      type: 'FDR',
+      amount: '175000.00',
+      issueOffset: 90,
+      maturityOffset: 275,
+      lifecycleStatus: 'REJECTED',
+      bankIdx: 0,
+    },
 
     // Verified (various states for release request scenarios)
-    { key: 'i17', institutionKey: 'sunrise', type: 'FDR', amount: '1500000.00', issueOffset: 400, maturityOffset: -20, lifecycleStatus: 'VERIFIED', bankIdx: 1 },
-    { key: 'i18', institutionKey: 'coastal', type: 'FDR', amount: '2000000.00', issueOffset: 500, maturityOffset: -45, lifecycleStatus: 'VERIFIED', bankIdx: 2 },
-    { key: 'i19', institutionKey: 'hillside', type: 'FDR', amount: '750000.00', issueOffset: 450, maturityOffset: -10, lifecycleStatus: 'VERIFIED', bankIdx: 3 },
-    { key: 'i20', institutionKey: 'northern', type: 'SECURITY_DEPOSIT', amount: '350000.00', issueOffset: 600, maturityOffset: -60, lifecycleStatus: 'VERIFIED', bankIdx: 4 },
+    {
+      key: 'i17',
+      institutionKey: 'sunrise',
+      type: 'FDR',
+      amount: '1500000.00',
+      issueOffset: 400,
+      maturityOffset: -20,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 1,
+    },
+    {
+      key: 'i18',
+      institutionKey: 'coastal',
+      type: 'FDR',
+      amount: '2000000.00',
+      issueOffset: 500,
+      maturityOffset: -45,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 2,
+    },
+    {
+      key: 'i19',
+      institutionKey: 'hillside',
+      type: 'FDR',
+      amount: '750000.00',
+      issueOffset: 450,
+      maturityOffset: -10,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 3,
+    },
+    {
+      key: 'i20',
+      institutionKey: 'northern',
+      type: 'SECURITY_DEPOSIT',
+      amount: '350000.00',
+      issueOffset: 600,
+      maturityOffset: -60,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 4,
+    },
 
     // Additional active FDRs
-    { key: 'i21', institutionKey: 'southern', type: 'FDR', amount: '500000.00', issueOffset: 100, maturityOffset: 265, lifecycleStatus: 'VERIFIED', bankIdx: 0 },
-    { key: 'i22', institutionKey: 'central', type: 'FDR', amount: '625000.00', issueOffset: 150, maturityOffset: 215, lifecycleStatus: 'VERIFIED', bankIdx: 1 },
-    { key: 'i23', institutionKey: 'western', type: 'SECURITY_DEPOSIT', amount: '450000.00', issueOffset: 200, maturityOffset: 165, lifecycleStatus: 'VERIFIED', bankIdx: 2 },
-    { key: 'i24', institutionKey: 'eastern', type: 'FDR', amount: '325000.00', issueOffset: 250, maturityOffset: 115, lifecycleStatus: 'VERIFIED', bankIdx: 3 },
-    { key: 'i25', institutionKey: 'sunrise', type: 'FDR', amount: '850000.00', issueOffset: 300, maturityOffset: 65, lifecycleStatus: 'VERIFIED', bankIdx: 4 },
-    { key: 'i26', institutionKey: 'sunrise', type: 'FDR', amount: '150000.00', issueOffset: 1, maturityOffset: 364, lifecycleStatus: 'DRAFT', bankIdx: 0 },
-    { key: 'i27', institutionKey: 'coastal', type: 'FDR', amount: '225000.00', issueOffset: 1, maturityOffset: 364, lifecycleStatus: 'DRAFT', bankIdx: 1 },
+    {
+      key: 'i21',
+      institutionKey: 'southern',
+      type: 'FDR',
+      amount: '500000.00',
+      issueOffset: 100,
+      maturityOffset: 265,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 0,
+    },
+    {
+      key: 'i22',
+      institutionKey: 'central',
+      type: 'FDR',
+      amount: '625000.00',
+      issueOffset: 150,
+      maturityOffset: 215,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 1,
+    },
+    {
+      key: 'i23',
+      institutionKey: 'western',
+      type: 'SECURITY_DEPOSIT',
+      amount: '450000.00',
+      issueOffset: 200,
+      maturityOffset: 165,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 2,
+    },
+    {
+      key: 'i24',
+      institutionKey: 'eastern',
+      type: 'FDR',
+      amount: '325000.00',
+      issueOffset: 250,
+      maturityOffset: 115,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 3,
+    },
+    {
+      key: 'i25',
+      institutionKey: 'sunrise',
+      type: 'FDR',
+      amount: '850000.00',
+      issueOffset: 300,
+      maturityOffset: 65,
+      lifecycleStatus: 'VERIFIED',
+      bankIdx: 4,
+    },
+    {
+      key: 'i26',
+      institutionKey: 'sunrise',
+      type: 'FDR',
+      amount: '150000.00',
+      issueOffset: 1,
+      maturityOffset: 364,
+      lifecycleStatus: 'DRAFT',
+      bankIdx: 0,
+    },
+    {
+      key: 'i27',
+      institutionKey: 'coastal',
+      type: 'FDR',
+      amount: '225000.00',
+      issueOffset: 1,
+      maturityOffset: 364,
+      lifecycleStatus: 'DRAFT',
+      bankIdx: 1,
+    },
   ];
 
   const instruments: Record<string, any> = {};
   for (const spec of instrumentSpecs) {
     const bank = getBank(spec.bankIdx ?? 0);
     const issueDate = daysAgo(spec.issueOffset);
-    const maturityDate = spec.maturityOffset >= 0 ? daysFromNow(spec.maturityOffset) : daysAgo(-spec.maturityOffset);
-    const validityEndDate = spec.validityEndOffset !== undefined
-      ? (spec.validityEndOffset >= 0 ? daysFromNow(spec.validityEndOffset) : daysAgo(-spec.validityEndOffset))
-      : null;
+    const maturityDate =
+      spec.maturityOffset >= 0
+        ? daysFromNow(spec.maturityOffset)
+        : daysAgo(-spec.maturityOffset);
+    const validityEndDate =
+      spec.validityEndOffset !== undefined
+        ? spec.validityEndOffset >= 0
+          ? daysFromNow(spec.validityEndOffset)
+          : daysAgo(-spec.validityEndOffset)
+        : null;
 
     const institutionId = institutions[spec.institutionKey].id;
-    const submittedById = spec.lifecycleStatus !== 'DRAFT' ? users.iu1.id : null;
-    const submittedAt = spec.lifecycleStatus !== 'DRAFT' ? daysAgo(Math.floor(spec.issueOffset * 0.3)) : null;
+    const submittedById =
+      spec.lifecycleStatus !== 'DRAFT'
+        ? Object.values(users).find(
+            (user: any) => user.institutionId === institutionId,
+          )?.id
+        : null;
+    const submittedAt =
+      spec.lifecycleStatus !== 'DRAFT'
+        ? daysAgo(Math.floor(spec.issueOffset * 0.3))
+        : null;
 
     instruments[spec.key] = await prisma.instrument.create({
       data: {
@@ -353,7 +754,8 @@ async function main() {
         sourceName: 'Demo Internal Review',
         referenceNumber: `DEMO-VER-${key.toUpperCase()}`,
         result: 'ACCEPTED',
-        notes: 'Verified in demo environment. This is simulated verification — not bank-confirmed.',
+        notes:
+          'Verified in demo environment. This is simulated verification — not bank-confirmed.',
         verifiedById: users.so1.id,
         verifiedAt: daysAgo(5),
       },
@@ -382,7 +784,8 @@ async function main() {
       instrumentId: instruments.i13.id,
       code: 'DATE_INCONSISTENCY',
       severity: 'HIGH' as const,
-      description: 'Maturity date on uploaded document differs from entered data by 15 days',
+      description:
+        'Maturity date on uploaded document differs from entered data by 15 days',
       reason: 'Document shows 15-Jan-2026 but entered as 30-Jan-2026',
       status: 'OPEN' as const,
     },
@@ -435,7 +838,7 @@ async function main() {
       purpose: 'AICTE Approval Security Deposit Renewal (Demo)',
       lifecycleStatus: 'VERIFIED',
       submittedAt: daysAgo(8),
-      submittedById: users.iu1.id,
+      submittedById: users.iuEastern.id,
       predecessorInstrumentId: instruments.i6.id,
     },
   });
@@ -469,7 +872,7 @@ async function main() {
       purpose: 'AICTE Approval Security Deposit Renewal (Demo)',
       lifecycleStatus: 'UNDER_REVIEW',
       submittedAt: daysAgo(4),
-      submittedById: users.iu1.id,
+      submittedById: users.iuCentral.id,
       predecessorInstrumentId: instruments.i7.id,
     },
   });
@@ -499,8 +902,8 @@ async function main() {
   // ─── Release Requests ─────────────────────────────────────────────────────────
   console.log('Creating release requests...');
 
-  const checklistSnapshot = checklistItems.map((item, idx) => ({
-    id: `demo-item-${idx + 1}`,
+  const checklistSnapshot = savedChecklistItems.map((item, idx) => ({
+    id: item.id,
     label: item.label,
     isRequired: item.isRequired,
     sortOrder: item.sortOrder,
@@ -514,19 +917,36 @@ async function main() {
       instrumentId: instruments.i17.id,
       institutionId: institutions.sunrise.id,
       requestType: 'RELEASE',
-      reason: 'FDR matured. Institution requests release and refund of security deposit amount (Demo).',
+      reason:
+        'FDR matured. Institution requests release and refund of security deposit amount (Demo).',
       status: 'PENDING_AUTHORITY_DECISION',
       submittedById: users.iu1.id,
       submittedAt: daysAgo(10),
       reviewedById: users.so1.id,
       reviewedAt: daysAgo(7),
-      scrutinyNotes: 'All documents reviewed. Forwarding for authority decision.',
-      checklistSnapshot: checklistSnapshot.map(i => ({ ...i, completed: i.isRequired })),
+      scrutinyNotes:
+        'All documents reviewed. Forwarding for authority decision.',
+      checklistSnapshot: checklistSnapshot.map((i) => ({
+        ...i,
+        completed: i.isRequired,
+      })),
       version: 3,
       history: [
-        { action: 'SUBMITTED', at: daysAgo(10).toISOString(), byUserId: users.iu1.id },
-        { action: 'UNDER_REVIEW', at: daysAgo(8).toISOString(), byUserId: users.so1.id },
-        { action: 'FORWARDED', at: daysAgo(7).toISOString(), byUserId: users.so1.id },
+        {
+          action: 'SUBMITTED',
+          at: daysAgo(10).toISOString(),
+          byUserId: users.iu1.id,
+        },
+        {
+          action: 'UNDER_REVIEW',
+          at: daysAgo(8).toISOString(),
+          byUserId: users.so1.id,
+        },
+        {
+          action: 'FORWARDED',
+          at: daysAgo(7).toISOString(),
+          byUserId: users.so1.id,
+        },
       ],
     },
   });
@@ -538,7 +958,8 @@ async function main() {
       instrumentId: instruments.i18.id,
       institutionId: institutions.coastal.id,
       requestType: 'REFUND',
-      reason: 'FDR matured and institution is winding down the program. Refund requested (Demo).',
+      reason:
+        'FDR matured and institution is winding down the program. Refund requested (Demo).',
       status: 'UNDER_REVIEW',
       submittedById: users.iu2.id,
       submittedAt: daysAgo(5),
@@ -547,8 +968,16 @@ async function main() {
       checklistSnapshot,
       version: 2,
       history: [
-        { action: 'SUBMITTED', at: daysAgo(5).toISOString(), byUserId: users.iu2.id },
-        { action: 'UNDER_REVIEW', at: daysAgo(3).toISOString(), byUserId: users.so2.id },
+        {
+          action: 'SUBMITTED',
+          at: daysAgo(5).toISOString(),
+          byUserId: users.iu2.id,
+        },
+        {
+          action: 'UNDER_REVIEW',
+          at: daysAgo(3).toISOString(),
+          byUserId: users.so2.id,
+        },
       ],
     },
   });
@@ -560,19 +989,34 @@ async function main() {
       instrumentId: instruments.i19.id,
       institutionId: institutions.hillside.id,
       requestType: 'DISCHARGE',
-      reason: 'Security deposit no longer required after program closure (Demo).',
+      reason:
+        'Security deposit no longer required after program closure (Demo).',
       status: 'RETURNED_FOR_INFORMATION',
       submittedById: users.iu3.id,
       submittedAt: daysAgo(15),
       reviewedById: users.so1.id,
       reviewedAt: daysAgo(12),
-      returnReason: 'NOC from competent authority is missing. Please attach the required document.',
+      returnReason:
+        'NOC from competent authority is missing. Please attach the required document.',
       checklistSnapshot,
       version: 3,
       history: [
-        { action: 'SUBMITTED', at: daysAgo(15).toISOString(), byUserId: users.iu3.id },
-        { action: 'UNDER_REVIEW', at: daysAgo(13).toISOString(), byUserId: users.so1.id },
-        { action: 'RETURNED', at: daysAgo(12).toISOString(), byUserId: users.so1.id, reason: 'NOC missing' },
+        {
+          action: 'SUBMITTED',
+          at: daysAgo(15).toISOString(),
+          byUserId: users.iu3.id,
+        },
+        {
+          action: 'UNDER_REVIEW',
+          at: daysAgo(13).toISOString(),
+          byUserId: users.so1.id,
+        },
+        {
+          action: 'RETURNED',
+          at: daysAgo(12).toISOString(),
+          byUserId: users.so1.id,
+          reason: 'NOC missing',
+        },
       ],
     },
   });
@@ -584,57 +1028,165 @@ async function main() {
       instrumentId: instruments.i20.id,
       institutionId: institutions.northern.id,
       requestType: 'RELEASE',
-      reason: 'Security deposit for approved program. Matured; release requested (Demo).',
+      reason:
+        'Security deposit for approved program. Matured; release requested (Demo).',
       status: 'APPROVED',
-      submittedById: users.iu1.id,
+      submittedById: users.iuNorthern.id,
       submittedAt: daysAgo(30),
       reviewedById: users.so2.id,
       reviewedAt: daysAgo(25),
       decisionById: users.aa.id,
       decisionAt: daysAgo(20),
       decisionReason: 'All conditions met. Release approved. (Demo decision)',
-      checklistSnapshot: checklistSnapshot.map(i => ({ ...i, completed: true })),
+      checklistSnapshot: checklistSnapshot.map((i) => ({
+        ...i,
+        completed: true,
+      })),
       version: 5,
       history: [
         { action: 'SUBMITTED', at: daysAgo(30).toISOString() },
-        { action: 'APPROVED', at: daysAgo(20).toISOString(), byUserId: users.aa.id },
+        {
+          action: 'APPROVED',
+          at: daysAgo(20).toISOString(),
+          byUserId: users.aa.id,
+        },
       ],
     },
   });
   console.log('  ✓ Release requests');
 
+  // Private synthetic evidence for all non-draft scenarios and release requests.
+  const directory = path.resolve(config.UPLOAD_DIR);
+  fs.mkdirSync(directory, { recursive: true });
+  function demoPdf(reference: string) {
+    const text = `DEMO ONLY - SYNTHETIC EVIDENCE - NOT BANK CONFIRMATION. Reference: ${reference}`;
+    const stream = `BT /F1 11 Tf 40 750 Td (${text}) Tj ET`;
+    const objects = [
+      '<</Type/Catalog /Pages 2 0 R>>',
+      '<</Type/Pages /Kids[3 0 R] /Count 1>>',
+      '<</Type/Page /Parent 2 0 R /MediaBox[0 0 612 792] /Resources<</Font<</F1 4 0 R>>>> /Contents 5 0 R>>',
+      '<</Type/Font /Subtype/Type1 /BaseFont/Helvetica>>',
+      `<</Length ${Buffer.byteLength(stream)}>>\nstream\n${stream}\nendstream`,
+    ];
+    let pdf = '%PDF-1.4\n';
+    const offsets = [0];
+    objects.forEach((object, index) => {
+      offsets.push(Buffer.byteLength(pdf));
+      pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    });
+    const start = Buffer.byteLength(pdf);
+    pdf += `xref\n0 6\n0000000000 65535 f \n${offsets
+      .slice(1)
+      .map((offset) => String(offset).padStart(10, '0') + ' 00000 n ')
+      .join('\n')}\ntrailer<</Size 6 /Root 1 0 R>>\nstartxref\n${start}\n%%EOF`;
+    return Buffer.from(pdf);
+  }
+  const seededInstruments = await prisma.instrument.findMany({
+    where: { lifecycleStatus: { not: 'DRAFT' } },
+  });
+  const releases = await prisma.releaseRequest.findMany();
+  for (const parent of [
+    ...seededInstruments.map((item) => ({
+      instrumentId: item.id,
+      releaseRequestId: null,
+      reference: item.referenceCode,
+      userId: item.submittedById!,
+    })),
+    ...releases.map((item) => ({
+      instrumentId: null,
+      releaseRequestId: item.id,
+      reference: item.referenceCode,
+      userId: item.submittedById,
+    })),
+  ]) {
+    const bytes = demoPdf(parent.reference),
+      key = `seed-${parent.reference}.pdf`;
+    fs.writeFileSync(path.join(directory, key), bytes);
+    await prisma.document.create({
+      data: {
+        instrumentId: parent.instrumentId,
+        releaseRequestId: parent.releaseRequestId,
+        category: parent.releaseRequestId ? 'RELEASE_SUPPORTING' : 'FDR_COPY',
+        originalFilename: `DEMO-${parent.reference}.pdf`,
+        storageKey: key,
+        mimeType: 'application/pdf',
+        sizeBytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        uploadedById: parent.userId,
+      },
+    });
+  }
+  console.log(
+    '  ✓ Private synthetic evidence (never real financial documents)',
+  );
+
   // ─── Submission Snapshots ─────────────────────────────────────────────────────
-  for (const key of ['i9', 'i10', 'i11', 'i12', 'i13', 'i14']) {
-    const inst = instruments[key];
-    if (inst.submittedById) {
-      await prisma.instrumentSubmissionSnapshot.create({
-        data: {
-          instrumentId: inst.id,
-          submittedById: inst.submittedById,
-          payload: {
-            instrumentNumber: inst.instrumentNumber,
-            bankName: inst.bankName,
-            bankBranch: inst.bankBranch,
-            amount: inst.amount.toString(),
-            issueDate: inst.issueDate,
-            maturityDate: inst.maturityDate,
-            purpose: inst.purpose,
-          },
-        },
-      });
-    }
+  for (const inst of await prisma.instrument.findMany({
+    where: { submittedById: { not: null } },
+    include: { documents: true },
+  })) {
+    await prisma.instrumentSubmissionSnapshot.create({
+      data: {
+        instrumentId: inst.id,
+        submittedById: inst.submittedById!,
+        submittedAt: inst.submittedAt || inst.createdAt,
+        payload: submissionSnapshot(inst),
+      },
+    });
   }
   console.log('  ✓ Submission snapshots');
 
   // ─── Notifications ────────────────────────────────────────────────────────────
   console.log('Creating notifications...');
   const notifDefs = [
-    { userId: users.iu1.id, type: 'MATURITY_REMINDER', title: 'FDR Maturing in 6 days', message: `Instrument ${instruments.i1.referenceCode} matures in 6 days. Please initiate renewal or release action.`, dedupeKey: `seed-notif-1-${users.iu1.id}`, entityId: instruments.i1.id },
-    { userId: users.iu2.id, type: 'MATURITY_REMINDER', title: 'FDR Maturing in 14 days', message: `Instrument ${instruments.i2.referenceCode} matures in 14 days.`, dedupeKey: `seed-notif-2-${users.iu2.id}`, entityId: instruments.i2.id },
-    { userId: users.so1.id, type: 'MATURITY_REMINDER', title: 'FDR Maturing in 6 days', message: `Instrument ${instruments.i1.referenceCode} (Sunrise) matures in 6 days.`, dedupeKey: `seed-notif-3-${users.so1.id}`, entityId: instruments.i1.id },
-    { userId: users.so2.id, type: 'MATURITY_ESCALATION', title: 'ESCALATION: Matured without action', message: `Instrument ${instruments.i7.referenceCode} (Central University) matured 30 days ago with no renewal or release.`, dedupeKey: `seed-escal-1-${users.so2.id}`, entityId: instruments.i7.id },
-    { userId: users.aa.id, type: 'RELEASE_PENDING_DECISION', title: 'Release Request Awaiting Decision', message: `Release request ${rr1.referenceCode} is awaiting your decision.`, dedupeKey: `seed-rr-notif-1-${users.aa.id}`, entityId: rr1.id },
-    { userId: users.iu1.id, type: 'SCRUTINY_ACTION_REQUIRED', title: 'Action Required on FDR', message: `Instrument ${instruments.i13.referenceCode} requires correction. A discrepancy has been flagged.`, dedupeKey: `seed-ar-notif-1-${users.iu1.id}`, entityId: instruments.i13.id },
+    {
+      userId: users.iu1.id,
+      type: 'MATURITY_REMINDER',
+      title: 'FDR Maturing in 7 days',
+      message: `Instrument ${instruments.i1.referenceCode} matures in 7 days. Please initiate renewal or release action.`,
+      dedupeKey: `seed-notif-1-${users.iu1.id}`,
+      entityId: instruments.i1.id,
+    },
+    {
+      userId: users.iu2.id,
+      type: 'MATURITY_REMINDER',
+      title: 'FDR Maturing in 15 days',
+      message: `Instrument ${instruments.i2.referenceCode} matures in 15 days.`,
+      dedupeKey: `seed-notif-2-${users.iu2.id}`,
+      entityId: instruments.i2.id,
+    },
+    {
+      userId: users.so1.id,
+      type: 'MATURITY_REMINDER',
+      title: 'FDR Maturing in 7 days',
+      message: `Instrument ${instruments.i1.referenceCode} (Sunrise) matures in 7 days.`,
+      dedupeKey: `seed-notif-3-${users.so1.id}`,
+      entityId: instruments.i1.id,
+    },
+    {
+      userId: users.so2.id,
+      type: 'MATURITY_ESCALATION',
+      title: 'ESCALATION: Matured without action',
+      message: `Instrument ${instruments.i7.referenceCode} (Central University) matured 30 days ago with no renewal or release.`,
+      dedupeKey: `seed-escal-1-${users.so2.id}`,
+      entityId: instruments.i7.id,
+    },
+    {
+      userId: users.aa.id,
+      type: 'RELEASE_PENDING_DECISION',
+      title: 'Release Request Awaiting Decision',
+      message: `Release request ${rr1.referenceCode} is awaiting your decision.`,
+      dedupeKey: `seed-rr-notif-1-${users.aa.id}`,
+      entityId: rr1.id,
+    },
+    {
+      userId: users.iu1.id,
+      type: 'SCRUTINY_ACTION_REQUIRED',
+      title: 'Action Required on FDR',
+      message: `Instrument ${instruments.i13.referenceCode} requires correction. A discrepancy has been flagged.`,
+      dedupeKey: `seed-ar-notif-1-${users.iu1.id}`,
+      entityId: instruments.i13.id,
+    },
   ];
 
   for (const n of notifDefs) {
@@ -645,7 +1197,10 @@ async function main() {
           type: n.type,
           title: n.title,
           message: n.message,
-          relatedEntityType: 'Instrument',
+          relatedEntityType:
+            n.type === 'RELEASE_PENDING_DECISION'
+              ? 'ReleaseRequest'
+              : 'Instrument',
           relatedEntityId: n.entityId,
           dedupeKey: n.dedupeKey,
           deliveryStatus: 'DELIVERED',
@@ -661,16 +1216,85 @@ async function main() {
   // ─── Audit Events ─────────────────────────────────────────────────────────────
   console.log('Creating audit timeline...');
   const auditDefs = [
-    { actorUserId: users.iu1.id, actorRole: 'INSTITUTION_USER', action: 'AUTH_LOGIN_SUCCESS', entityType: 'User', entityId: users.iu1.id, timestamp: daysAgo(20) },
-    { actorUserId: users.iu1.id, actorRole: 'INSTITUTION_USER', action: 'INSTRUMENT_CREATED', entityType: 'Instrument', entityId: instruments.i1.id, timestamp: daysAgo(18) },
-    { actorUserId: users.iu1.id, actorRole: 'INSTITUTION_USER', action: 'INSTRUMENT_SUBMITTED', entityType: 'Instrument', entityId: instruments.i1.id, timestamp: daysAgo(17) },
-    { actorUserId: users.so1.id, actorRole: 'SCRUTINY_OFFICER', action: 'INSTRUMENT_UNDER_REVIEW', entityType: 'Instrument', entityId: instruments.i1.id, timestamp: daysAgo(15) },
-    { actorUserId: users.so1.id, actorRole: 'SCRUTINY_OFFICER', action: 'VERIFICATION_RECORDED', entityType: 'Verification', entityId: instruments.i1.id, timestamp: daysAgo(12) },
-    { actorUserId: users.so1.id, actorRole: 'SCRUTINY_OFFICER', action: 'INSTRUMENT_VERIFIED', entityType: 'Instrument', entityId: instruments.i1.id, timestamp: daysAgo(10) },
-    { actorUserId: users.iu1.id, actorRole: 'INSTITUTION_USER', action: 'RELEASE_REQUEST_CREATED', entityType: 'ReleaseRequest', entityId: rr1.id, timestamp: daysAgo(10) },
-    { actorUserId: users.so1.id, actorRole: 'SCRUTINY_OFFICER', action: 'RELEASE_REQUEST_FORWARDED', entityType: 'ReleaseRequest', entityId: rr1.id, timestamp: daysAgo(7) },
-    { actorUserId: users.so1.id, actorRole: 'SCRUTINY_OFFICER', action: 'DISCREPANCY_CREATED', entityType: 'Discrepancy', entityId: instruments.i13.id, timestamp: daysAgo(6) },
-    { actorUserId: users.sa.id, actorRole: 'SYSTEM_ADMIN', action: 'SETTING_UPDATED', entityType: 'SystemSetting', timestamp: daysAgo(3) },
+    {
+      actorUserId: users.iu1.id,
+      actorRole: 'INSTITUTION_USER',
+      action: 'AUTH_LOGIN_SUCCESS',
+      entityType: 'User',
+      entityId: users.iu1.id,
+      timestamp: daysAgo(20),
+    },
+    {
+      actorUserId: users.iu1.id,
+      actorRole: 'INSTITUTION_USER',
+      action: 'INSTRUMENT_CREATED',
+      entityType: 'Instrument',
+      entityId: instruments.i1.id,
+      timestamp: daysAgo(18),
+    },
+    {
+      actorUserId: users.iu1.id,
+      actorRole: 'INSTITUTION_USER',
+      action: 'INSTRUMENT_SUBMITTED',
+      entityType: 'Instrument',
+      entityId: instruments.i1.id,
+      timestamp: daysAgo(17),
+    },
+    {
+      actorUserId: users.so1.id,
+      actorRole: 'SCRUTINY_OFFICER',
+      action: 'INSTRUMENT_UNDER_REVIEW',
+      entityType: 'Instrument',
+      entityId: instruments.i1.id,
+      timestamp: daysAgo(15),
+    },
+    {
+      actorUserId: users.so1.id,
+      actorRole: 'SCRUTINY_OFFICER',
+      action: 'VERIFICATION_RECORDED',
+      entityType: 'Verification',
+      entityId: instruments.i1.id,
+      timestamp: daysAgo(12),
+    },
+    {
+      actorUserId: users.so1.id,
+      actorRole: 'SCRUTINY_OFFICER',
+      action: 'INSTRUMENT_VERIFIED',
+      entityType: 'Instrument',
+      entityId: instruments.i1.id,
+      timestamp: daysAgo(10),
+    },
+    {
+      actorUserId: users.iu1.id,
+      actorRole: 'INSTITUTION_USER',
+      action: 'RELEASE_REQUEST_CREATED',
+      entityType: 'ReleaseRequest',
+      entityId: rr1.id,
+      timestamp: daysAgo(10),
+    },
+    {
+      actorUserId: users.so1.id,
+      actorRole: 'SCRUTINY_OFFICER',
+      action: 'RELEASE_REQUEST_FORWARDED',
+      entityType: 'ReleaseRequest',
+      entityId: rr1.id,
+      timestamp: daysAgo(7),
+    },
+    {
+      actorUserId: users.so1.id,
+      actorRole: 'SCRUTINY_OFFICER',
+      action: 'DISCREPANCY_CREATED',
+      entityType: 'Discrepancy',
+      entityId: instruments.i13.id,
+      timestamp: daysAgo(6),
+    },
+    {
+      actorUserId: users.sa.id,
+      actorRole: 'SYSTEM_ADMIN',
+      action: 'SETTING_UPDATED',
+      entityType: 'SystemSetting',
+      timestamp: daysAgo(3),
+    },
   ];
 
   for (const ae of auditDefs) {
@@ -695,21 +1319,20 @@ async function main() {
   console.log('⚠️  These credentials are for the demo environment only.');
   console.log('⚠️  All data is synthetic. Not real AICTE data.\n');
 
-  console.log('Role                 | Email                                  | Password');
+  console.log(
+    'Role                 | Email                                  | Password',
+  );
   console.log('-'.repeat(80));
   const printUser = (role: string, email: string, key: string) =>
     console.log(`${role.padEnd(21)}| ${email.padEnd(39)} | ${passwords[key]}`);
 
-  printUser('SYSTEM_ADMIN', 'admin@depositdesk.invalid', 'sa');
-  printUser('SCRUTINY_OFFICER', 'officer.priya@depositdesk.invalid', 'so1');
-  printUser('SCRUTINY_OFFICER', 'officer.rahul@depositdesk.invalid', 'so2');
-  printUser('APPROVING_AUTHORITY', 'authority.anita@depositdesk.invalid', 'aa');
-  printUser('INSTITUTION_USER', 'vikram@sunrise.invalid', 'iu1');
-  printUser('INSTITUTION_USER', 'meera@coastal.invalid', 'iu2');
-  printUser('INSTITUTION_USER', 'sanjay@hillside.invalid', 'iu3');
+  for (const definition of userDefs)
+    printUser(definition.role, definition.email, definition.key);
 
   console.log('\n' + '═'.repeat(70));
-  console.log('✅ Seed complete! Start the dev server and open http://localhost:5173');
+  console.log(
+    '✅ Seed complete! Start the dev server and open http://localhost:5173',
+  );
   console.log('═'.repeat(70) + '\n');
 }
 

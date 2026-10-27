@@ -9,7 +9,12 @@ export const NewInstrumentPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const copyFrom = params.get('copyFrom');
+  const renewalFrom = params.get('renewFrom');
+  const copyFrom = params.get('copyFrom') || renewalFrom;
+  const [predecessor, setPredecessor] = useState<{
+    id: string;
+    version: number;
+  }>();
   const [template, setTemplate] = useState<InstrumentDetail>();
   const [error, setError] = useState('');
   useEffect(() => {
@@ -18,7 +23,20 @@ export const NewInstrumentPage: React.FC = () => {
       api.instruments
         .getById(copyFrom)
         .then((record) => {
-          if (current) setTemplate(record);
+          if (current) {
+            if (renewalFrom) {
+              setPredecessor({ id: record.id, version: record.version });
+              setTemplate({
+                ...record,
+                instrumentNumber: '',
+                issueDate: new Intl.DateTimeFormat('en-CA', {
+                  timeZone: 'Asia/Kolkata',
+                }).format(new Date()),
+                maturityDate: '',
+                validityEndDate: null,
+              });
+            } else setTemplate(record);
+          }
         })
         .catch((error) => {
           if (current)
@@ -38,7 +56,9 @@ export const NewInstrumentPage: React.FC = () => {
         Back to registry
       </button>
       <h1 className="text-xl font-semibold">
-        Register a security deposit / FDR
+        {renewalFrom
+          ? 'Create renewal / replacement'
+          : 'Register a security deposit / FDR'}
       </h1>
       <p className="text-sm text-slate-600">
         Save a draft, attach supporting evidence, then submit for scrutiny.
@@ -56,6 +76,7 @@ export const NewInstrumentPage: React.FC = () => {
       ) : (
         <InstrumentForm
           template={template}
+          predecessor={predecessor}
           onSaved={(id) => navigate(`/instruments/${id}`)}
         />
       )}

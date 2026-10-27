@@ -12,9 +12,11 @@ export function InstrumentForm({
   initial,
   onSaved,
   template,
+  predecessor,
 }: {
   initial?: InstrumentDetail;
   template?: InstrumentDetail;
+  predecessor?: { id: string; version: number };
   onSaved: (id: string) => void;
 }) {
   const { user } = useAuth();
@@ -78,13 +80,23 @@ export function InstrumentForm({
             ...editable,
             version: record.version,
           })
-        : await api.instruments.create(parsed.data);
+        : predecessor
+          ? await api.instruments.createRenewal(predecessor.id, {
+              ...parsed.data,
+              version: predecessor.version,
+            })
+          : await api.instruments.create(parsed.data);
       setRecord(saved);
       if (file) {
         const data = new FormData();
         data.append('file', file);
         data.append('instrumentId', saved.id);
-        data.append('category', DocumentCategory.FDR_COPY);
+        data.append(
+          'category',
+          predecessor
+            ? DocumentCategory.RENEWAL_DOCUMENT
+            : DocumentCategory.FDR_COPY,
+        );
         data.append('version', String(saved.version));
         await api.documents.upload(data);
         setFile(null);

@@ -1,469 +1,773 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ReleaseRequestStatus, Role } from '@depositdesk/shared';
-import { useAuth } from '../context/AuthContext';
-import { api, ReleaseRequestDetail } from '../lib/api';
-import { StatusBadge } from '../components/common/StatusBadge';
-import { Modal } from '../components/common/Modal';
+import React, { useEffect, useState } from 'react';
 import {
-  FileCheck2,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Building,
-  ArrowRight,
-  ShieldCheck,
-  Send,
-  UserCheck,
-  ExternalLink,
-} from 'lucide-react';
-
-const MOCK_RELEASES: ReleaseRequestDetail[] = [
-  {
-    id: 'rel-1',
-    instrumentId: 'fdr-104',
-    instrument: {
-      id: 'fdr-104',
-      institutionId: 'inst-4',
-      institutionName: 'National Institute of Pharmacy & Research',
-      aicteId: '1-40918273',
-      instrumentNumber: 'PNB-FDR-2020-1122',
-      instrumentType: 'FDR' as any,
-      bankName: 'Punjab National Bank',
-      bankBranch: 'Sector 17, Chandigarh',
-      amount: '35000000.00',
-      currency: 'INR',
-      issueDate: '2020-10-15',
-      maturityDate: '2026-10-15',
-      purpose: 'AICTE Security Deposit for M.Pharm program',
-      lifecycleStatus: 'VERIFIED' as any,
-      independentVerificationStatus: 'CONFIRMED_BY_AUTHORIZED_SOURCE' as any,
-      documentReviewStatus: 'COMPLETE' as any,
-      dateStatus: 'MATURED' as any,
-      renewalStatus: 'NONE' as any,
-      releaseStatus: 'OPEN' as any,
-      daysRemaining: -11,
-      version: 2,
-      createdAt: '2020-10-15',
-      updatedAt: '2026-10-20',
-    },
-    requestType: 'FULL_REFUND_COURSE_CLOSURE',
-    reason: 'M.Pharm Pharmacology specialization formally closed per AICTE approval letter dated 2026-06-15. All students graduated, zero fee dues, NOC obtained.',
-    status: ReleaseRequestStatus.PENDING_AUTHORITY_DECISION,
-    version: 3,
-    scrutinyNotes: 'Scrutiny Officer verified all graduating student lists and AICTE closure approvals. Checklist 100% verified. Forwarded for Regional Officer approval.',
-    submittedBy: { id: 'u4', name: 'Dr. Sunita Rao (Director)' },
-    scrutinyOfficer: { id: 'so-1', name: 'Ananya Verma (Scrutiny Officer)' },
-    approvingAuthority: null,
-    completedBy: null,
-    createdAt: '2026-10-16T11:00:00Z',
-    updatedAt: '2026-10-22T14:30:00Z',
-    documents: [
-      {
-        id: 'rdoc-1',
-        category: 'RELEASE_SUPPORTING' as any,
-        originalFilename: 'AICTE_Course_Closure_NOC_Order.pdf',
-        fileSizeBytes: 1204910,
-      },
-    ],
-  },
-  {
-    id: 'rel-2',
-    instrumentId: 'fdr-102',
-    instrument: {
-      id: 'fdr-102',
-      institutionId: 'inst-2',
-      institutionName: 'Pune Technical Campus',
-      aicteId: '1-20938475',
-      instrumentNumber: 'HDFC-FDR-2021-4412',
-      instrumentType: 'FDR' as any,
-      bankName: 'HDFC Bank',
-      bankBranch: 'Shivajinagar, Pune',
-      amount: '25000000.00',
-      currency: 'INR',
-      issueDate: '2021-11-10',
-      maturityDate: '2026-11-10',
-      purpose: 'AICTE Endowment Fund Deposit for Polytechnic expansion',
-      lifecycleStatus: 'VERIFIED' as any,
-      independentVerificationStatus: 'CONFIRMED_BY_AUTHORIZED_SOURCE' as any,
-      documentReviewStatus: 'COMPLETE' as any,
-      dateStatus: 'EXPIRING_SOON' as any,
-      renewalStatus: 'REQUIRED' as any,
-      releaseStatus: 'OPEN' as any,
-      daysRemaining: 15,
-      version: 1,
-      createdAt: '2021-11-10',
-      updatedAt: '2021-11-10',
-    },
-    requestType: 'ENDOWMENT_RELEASE_TENURE_COMPLETED',
-    reason: 'Mandatory 5-year security deposit tenure completed with clean compliance records.',
-    status: ReleaseRequestStatus.UNDER_REVIEW,
-    version: 1,
-    scrutinyNotes: 'Initial scrutiny in progress. Awaiting bank joint signature verification.',
-    submittedBy: { id: 'u2', name: 'Dr. Suresh Joshi (Principal)' },
-    scrutinyOfficer: { id: 'so-1', name: 'Ananya Verma (Scrutiny Officer)' },
-    approvingAuthority: null,
-    completedBy: null,
-    createdAt: '2026-10-24T09:30:00Z',
-    updatedAt: '2026-10-24T09:30:00Z',
-    documents: [],
-  },
-];
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
+import { api, ReleaseRequestDetail } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import {
+  PageTitle,
+  Feedback,
+  Pager,
+  useRemote,
+  formatDate,
+  money,
+} from '../components/common/PageTools';
+import { StatusBadge } from '../components/common/StatusBadge';
 
 export const ReleaseRequestsPage: React.FC = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-
-  const [requests, setRequests] = useState<ReleaseRequestDetail[]>(MOCK_RELEASES);
-  const [selectedRequest, setSelectedRequest] = useState<ReleaseRequestDetail | null>(null);
-
-  // Decision Modal state
-  const [showDecisionModal, setShowDecisionModal] = useState(false);
-  const [decisionAction, setDecisionAction] = useState<'APPROVE' | 'REJECT'>('APPROVE');
-  const [decisionReason, setDecisionReason] = useState('All regulatory and tenure requirements verified satisfied per AICTE Approval Process Handbook.');
-  const [decisionNotes, setDecisionNotes] = useState('');
-
-  // Completion Modal state
-  const [showCompleteModal, setShowCompleteModal] = useState(false);
-  const [compRef, setCompRef] = useState('AICTE/REFUND/2026/DISPATCH-0912');
-  const [compDate, setCompDate] = useState(new Date().toISOString().split('T')[0]);
-  const [compNotes, setCompNotes] = useState('Bank confirmed proceeds released to institution bank account.');
-
-  useEffect(() => {
-    api.releaseRequests
-      .list()
-      .then((res) => {
-        if (res.data && res.data.length > 0) setRequests(res.data);
-      })
-      .catch(() => {
-        // Fall back to synthetic data
-      });
-  }, []);
-
-  const formatINR = (val: string | number) => {
-    const num = typeof val === 'string' ? parseFloat(val) : val;
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(num);
-  };
-
-  const handleDecision = async () => {
-    if (!selectedRequest) return;
-    try {
-      await api.releaseRequests.decide(
-        selectedRequest.id,
-        decisionAction,
-        decisionReason,
-        selectedRequest.version,
-        decisionNotes
-      );
-      setShowDecisionModal(false);
-      window.location.reload();
-    } catch {
-      // optimistic update
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === selectedRequest.id
-            ? {
-                ...r,
-                status: decisionAction === 'APPROVE' ? ReleaseRequestStatus.APPROVED : ReleaseRequestStatus.REJECTED,
-                decisionReason,
-                approvingAuthority: { id: user?.id || 'u', name: user?.name || 'Approving Authority' },
-              }
-            : r
-        )
-      );
-      setShowDecisionModal(false);
-    }
-  };
-
-  const handleComplete = async () => {
-    if (!selectedRequest) return;
-    try {
-      await api.releaseRequests.complete(
-        selectedRequest.id,
-        compRef,
-        compDate,
-        selectedRequest.version,
-        compNotes
-      );
-      setShowCompleteModal(false);
-      window.location.reload();
-    } catch {
-      // optimistic update
-      setRequests((prev) =>
-        prev.map((r) =>
-          r.id === selectedRequest.id
-            ? {
-                ...r,
-                status: ReleaseRequestStatus.COMPLETED,
-                completionReference: compRef,
-                completionDate: compDate,
-                completedBy: { id: user?.id || 'u', name: user?.name || 'Officer' },
-              }
-            : r
-        )
-      );
-      setShowCompleteModal(false);
-    }
-  };
-
+  const { id } = useParams();
+  return id ? <ReleaseDetail id={id} /> : <ReleaseList />;
+};
+function ReleaseList() {
+  const { user } = useAuth(),
+    navigate = useNavigate();
+  const [query] = useSearchParams();
+  const [status, setStatus] = useState(''),
+    [search, setSearch] = useState(''),
+    [page, setPage] = useState(1),
+    [show, setShow] = useState(Boolean(query.get('instrumentId')));
+  const [instrumentId, setInstrumentId] = useState(
+      query.get('instrumentId') || '',
+    ),
+    [reason, setReason] = useState(''),
+    [type, setType] = useState('RELEASE');
+  const state = useRemote(
+    () =>
+      api.releaseRequests.list({
+        page,
+        pageSize: 20,
+        status: status || undefined,
+        search: search || undefined,
+        open: query.get('open') || undefined,
+      }),
+    [page, status, search, query.toString()],
+  );
+  const options = useRemote(async () => {
+    const selected = query.get('instrumentId');
+    if (selected) return [await api.instruments.getById(selected)];
+    return (
+      await api.instruments.list({ lifecycleStatus: 'VERIFIED', pageSize: 100 })
+    ).data;
+  }, [user?.id, query.toString()]);
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">Release & Refund Requests</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Two-step Maker-Checker governance workflow for mature FDR lien discharge and security deposit refund.
-        </p>
+    <div className="space-y-5">
+      <PageTitle
+        eyebrow="AUTHORIZED WORKFLOW"
+        title="Release requests"
+        description="Review requests, track checklist evidence and record decisions separately from completion."
+      >
+        {user?.role === 'INSTITUTION_USER' && (
+          <button className="btn-primary" onClick={() => setShow(!show)}>
+            {show ? 'Close form' : 'New request'}
+          </button>
+        )}
+      </PageTitle>
+      <Feedback state={state} />
+      {show && user?.role === 'INSTITUTION_USER' && (
+        <form
+          className="card-notion space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            state.act(async () => {
+              const created = await api.releaseRequests.create({
+                instrumentId,
+                requestType: type,
+                reason,
+              });
+              navigate(`/releases/${created.id}`);
+            }, 'Draft created.');
+          }}
+        >
+          <h2>New release / discharge / refund request</h2>
+          <p className="text-xs text-slate-500">
+            A matured instrument is not automatically eligible. Checklist
+            content is demo policy configuration. This portal sends no payment
+            or bank instruction.
+          </p>
+          <Feedback state={options} />
+          <div className="grid md:grid-cols-2 gap-4">
+            <label className="text-sm">
+              Verified instrument
+              <select
+                required
+                className="input-notion"
+                value={instrumentId}
+                onChange={(event) => setInstrumentId(event.target.value)}
+              >
+                <option value="">Choose an instrument</option>
+                {options.data?.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.instrumentNumber} · {money(item.amount)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              Request type
+              <select
+                className="input-notion"
+                value={type}
+                onChange={(event) => setType(event.target.value)}
+              >
+                {['RELEASE', 'DISCHARGE', 'REFUND'].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="block text-sm">
+            Reason
+            <textarea
+              required
+              className="input-notion"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </label>
+          <button
+            className="btn-primary"
+            disabled={state.busy || !reason.trim() || !instrumentId}
+          >
+            Create draft request
+          </button>
+        </form>
+      )}
+      <div className="flex flex-wrap gap-3">
+        <label className="text-sm flex-1 min-w-[180px]">
+          Search
+          <input
+            className="input-notion"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Request, instrument or institution"
+          />
+        </label>
+        <label className="text-sm">
+          Status
+          <select
+            className="input-notion"
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">All statuses</option>
+            {[
+              'DRAFT',
+              'SUBMITTED',
+              'UNDER_REVIEW',
+              'RETURNED_FOR_INFORMATION',
+              'RESUBMITTED',
+              'PENDING_AUTHORITY_DECISION',
+              'APPROVED',
+              'REJECTED',
+              'COMPLETED',
+            ].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+        </label>
       </div>
-
-      {/* Maker-Checker Workflow Visualization Banner */}
-      <div className="card-notion p-5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white border-0 shadow-md">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-4">
-          Maker-Checker Segregation of Duties Flow
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-          <div className="p-3 rounded-lg bg-white/10 border border-white/10 space-y-1">
-            <span className="text-2xs font-bold text-blue-300">STEP 1: MAKER</span>
-            <p className="font-semibold text-white">Institution Submits</p>
-            <p className="text-2xs text-slate-300">IU provides reason, closure NOC, and supporting evidence.</p>
-          </div>
-          <div className="p-3 rounded-lg bg-white/10 border border-white/10 space-y-1">
-            <span className="text-2xs font-bold text-amber-300">STEP 2: CHECKER</span>
-            <p className="font-semibold text-white">Scrutiny Officer Review</p>
-            <p className="text-2xs text-slate-300">Verifies mandatory checklist, student records, and bank joint tenure.</p>
-          </div>
-          <div className="p-3 rounded-lg bg-white/10 border border-white/10 space-y-1">
-            <span className="text-2xs font-bold text-purple-300">STEP 3: AUTHORITY</span>
-            <p className="font-semibold text-white">Approving Authority Decision</p>
-            <p className="text-2xs text-slate-300">Regional Officer formally APPROVES or REJECTS with written order.</p>
-          </div>
-          <div className="p-3 rounded-lg bg-white/10 border border-white/10 space-y-1">
-            <span className="text-2xs font-bold text-emerald-300">STEP 4: EXECUTION</span>
-            <p className="font-semibold text-white">Completion Evidence</p>
-            <p className="text-2xs text-slate-300">Discharge letter issued to bank; dispatch reference recorded.</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Requests Table */}
-      <div className="card-notion p-0 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="table-notion">
-            <thead className="bg-slate-50/70">
-              <tr>
-                <th>Request Particulars</th>
-                <th>Institution & AICTE ID</th>
-                <th>Deposit Amount</th>
-                <th>Maker-Checker Flow</th>
-                <th>Status</th>
-                <th className="text-right">Actions</th>
+      <div className="card-notion p-0 overflow-x-auto">
+        <table className="table-notion">
+          <thead>
+            <tr>
+              <th>Request / instrument</th>
+              <th>Institution</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {state.data?.data.map((item) => (
+              <tr key={item.id}>
+                <td>
+                  <Link
+                    className="text-orange-700 font-medium"
+                    to={`/releases/${item.id}`}
+                  >
+                    {item.referenceCode}
+                  </Link>
+                  <p className="text-xs text-slate-500">
+                    {item.instrument.instrumentNumber}
+                  </p>
+                </td>
+                <td>{item.institution.name}</td>
+                <td>{item.requestType}</td>
+                <td>{money(item.instrument.amount)}</td>
+                <td>
+                  <StatusBadge status={item.status} type="release" />
+                </td>
+                <td>{formatDate(item.createdAt)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {requests.map((req) => (
-                <tr key={req.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td>
-                    <div className="space-y-0.5">
-                      <span className="code-ref font-bold text-blue-700">{req.instrument.instrumentNumber}</span>
-                      <p className="text-2xs text-muted-foreground font-medium">{req.requestType.replace(/_/g, ' ')}</p>
-                      <p className="text-2xs text-slate-500 line-clamp-1 max-w-sm">{req.reason}</p>
-                    </div>
-                  </td>
-
-                  <td>
-                    <p className="font-semibold text-foreground text-xs">{req.instrument.institutionName}</p>
-                    {req.instrument.aicteId && (
-                      <p className="text-2xs text-muted-foreground font-mono">ID: {req.instrument.aicteId}</p>
-                    )}
-                  </td>
-
-                  <td>
-                    <span className="font-bold text-foreground text-xs">{formatINR(req.instrument.amount)}</span>
-                  </td>
-
-                  <td>
-                    <div className="space-y-1 text-2xs text-muted-foreground">
-                      <p>
-                        Maker: <strong className="text-slate-700">{req.submittedBy.name}</strong>
-                      </p>
-                      {req.scrutinyOfficer && (
-                        <p>
-                          Checker: <strong className="text-slate-700">{req.scrutinyOfficer.name}</strong>
-                        </p>
-                      )}
-                      {req.approvingAuthority && (
-                        <p>
-                          Authority: <strong className="text-slate-700">{req.approvingAuthority.name}</strong>
-                        </p>
-                      )}
-                    </div>
-                  </td>
-
-                  <td>
-                    <StatusBadge status={req.status} type="release" />
-                  </td>
-
-                  <td className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {/* Approving Authority Decision Action */}
-                      {user?.role === Role.APPROVING_AUTHORITY &&
-                        req.status === ReleaseRequestStatus.PENDING_AUTHORITY_DECISION && (
-                          <button
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setShowDecisionModal(true);
-                            }}
-                            className="btn-primary text-xs py-1 px-2.5 shadow-sm"
-                          >
-                            Authority Decision
-                          </button>
-                        )}
-
-                      {/* Completion Evidence Action (After Approval) */}
-                      {(user?.role === Role.SCRUTINY_OFFICER || user?.role === Role.APPROVING_AUTHORITY) &&
-                        req.status === ReleaseRequestStatus.APPROVED && (
-                          <button
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setShowCompleteModal(true);
-                            }}
-                            className="btn bg-emerald-600 text-white hover:bg-emerald-700 text-xs py-1 px-2.5 shadow-sm"
-                          >
-                            Record Discharge
-                          </button>
-                        )}
-
-                      <button
-                        onClick={() => navigate(`/instruments/${req.instrumentId}`)}
-                        className="btn-outline text-xs py-1 px-2 flex items-center gap-1"
-                      >
-                        <span>FDR</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
+        {!state.loading && !state.data?.data.length && (
+          <p className="empty-state">
+            No release requests match these filters.
+          </p>
+        )}
       </div>
-
-      {/* Decision Modal (Approving Authority) */}
-      <Modal
-        isOpen={showDecisionModal}
-        onClose={() => setShowDecisionModal(false)}
-        title="Approving Authority Decision"
-        description="Formal decision to approve or reject deposit release. This action is permanently audited."
-        maxWidth="md"
-        footer={
-          <>
-            <button onClick={() => setShowDecisionModal(false)} className="btn-outline text-xs">
-              Cancel
-            </button>
-            <button
-              onClick={handleDecision}
-              className={`text-xs ${
-                decisionAction === 'APPROVE' ? 'btn-primary' : 'btn-destructive'
-              }`}
-            >
-              Confirm {decisionAction === 'APPROVE' ? 'Approval' : 'Rejection'}
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-3 text-xs">
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">Decision</label>
-            <select
-              value={decisionAction}
-              onChange={(e) => setDecisionAction(e.target.value as 'APPROVE' | 'REJECT')}
-              className="input-notion text-xs"
-            >
-              <option value="APPROVE">APPROVE Release of FDR</option>
-              <option value="REJECT">REJECT Release Request</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">Formal Decision Reason *</label>
-            <textarea
-              rows={3}
-              value={decisionReason}
-              onChange={(e) => setDecisionReason(e.target.value)}
-              className="input-notion text-xs"
-              placeholder="Record official justification, reference AICTE committee or officer order..."
-              required
-            />
-          </div>
-
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">Internal Notes (Optional)</label>
-            <textarea
-              rows={2}
-              value={decisionNotes}
-              onChange={(e) => setDecisionNotes(e.target.value)}
-              className="input-notion text-xs"
-              placeholder="Additional remarks..."
-            />
-          </div>
-        </div>
-      </Modal>
-
-      {/* Completion Modal */}
-      <Modal
-        isOpen={showCompleteModal}
-        onClose={() => setShowCompleteModal(false)}
-        title="Record Bank Discharge Evidence"
-        description="Upload dispatch details of the official discharge letter sent to the authorized bank."
-        maxWidth="md"
-        footer={
-          <>
-            <button onClick={() => setShowCompleteModal(false)} className="btn-outline text-xs">
-              Cancel
-            </button>
-            <button onClick={handleComplete} className="btn-primary text-xs">
-              Mark Completed & Discharge Lien
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-3 text-xs">
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">AICTE Discharge Dispatch / Reference Number *</label>
-            <input
-              type="text"
-              value={compRef}
-              onChange={(e) => setCompRef(e.target.value)}
-              className="input-notion text-xs font-mono"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">Completion Date *</label>
-            <input
-              type="date"
-              value={compDate}
-              onChange={(e) => setCompDate(e.target.value)}
-              className="input-notion text-xs"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="font-semibold text-slate-700 block mb-1">Completion Notes</label>
-            <textarea
-              rows={2}
-              value={compNotes}
-              onChange={(e) => setCompNotes(e.target.value)}
-              className="input-notion text-xs"
-              placeholder="Record bank response or confirmation receipt..."
-            />
-          </div>
-        </div>
-      </Modal>
+      <Pager
+        page={page}
+        total={state.data?.total || 0}
+        onChange={setPage}
+        disabled={state.loading}
+      />
     </div>
   );
-};
+}
+function ReleaseDetail({ id }: { id: string }) {
+  const { user } = useAuth();
+  const state = useRemote(() => api.releaseRequests.getById(id), [id]);
+  const record = state.data;
+  const [notes, setNotes] = useState(''),
+    [decisionNotes, setDecisionNotes] = useState(''),
+    [file, setFile] = useState<File | null>(null),
+    [supersedes, setSupersedes] = useState('');
+  const [completionReference, setCompletionReference] = useState(''),
+    [completionDate, setCompletionDate] = useState(
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(
+        new Date(),
+      ),
+    );
+  const [reason, setReason] = useState('');
+  useEffect(() => {
+    setReason(record?.reason || '');
+  }, [record?.id, record?.reason]);
+  const own = user?.role === 'INSTITUTION_USER',
+    officer = user?.role === 'SCRUTINY_OFFICER',
+    authority = user?.role === 'APPROVING_AUTHORITY';
+  const review =
+    officer &&
+    record?.scrutinyOfficer?.id === user?.id &&
+    record.status === 'UNDER_REVIEW';
+  const decide =
+    authority &&
+    record?.status === 'PENDING_AUTHORITY_DECISION' &&
+    record.scrutinyOfficer?.id !== user?.id &&
+    record.submittedBy.id !== user?.id;
+  const uploadAllowed =
+    (own &&
+      ['DRAFT', 'RETURNED_FOR_INFORMATION'].includes(record?.status || '')) ||
+    review;
+  const run = (operation: () => Promise<unknown>, message: string) =>
+    state.act(operation, message);
+  const action = (
+    name: string,
+    operation: () => Promise<unknown>,
+    message: string,
+  ) => {
+    if (window.confirm(name)) run(operation, message);
+  };
+  return (
+    <div className="space-y-5">
+      <Link className="text-sm text-orange-700" to="/releases">
+        ← Release requests
+      </Link>
+      <Feedback state={state} />
+      {record && (
+        <>
+          <PageTitle
+            eyebrow="RELEASE CASE"
+            title={record.referenceCode}
+            description={`${record.institution.name} · ${record.requestType}`}
+          >
+            <StatusBadge status={record.status} type="release" />
+            <button className="btn-outline" onClick={state.reload}>
+              Refresh
+            </button>
+          </PageTitle>
+          <p className="notice border-orange-200 bg-orange-50 text-orange-900">
+            Demo administrative workflow. Approval and completion are separate
+            records. No payment, discharge instruction or real-world release is
+            executed.
+          </p>
+          <div className="grid xl:grid-cols-[1fr_340px] gap-5 items-start">
+            <div className="space-y-5">
+              <section className="card-notion space-y-3">
+                <h2>Request details</h2>
+                <Link
+                  className="text-sm text-orange-700"
+                  to={`/instruments/${record.instrumentId}`}
+                >
+                  {record.instrument.instrumentNumber}
+                </Link>
+                <p className="text-sm">{record.reason}</p>
+                <div className="grid sm:grid-cols-2 gap-3 text-xs text-slate-500">
+                  <p>Requested by {record.submittedBy.name}</p>
+                  <p>Amount: {money(record.instrument.amount)}</p>
+                  <p>
+                    Reviewer: {record.scrutinyOfficer?.name || 'Not assigned'}
+                  </p>
+                  <p>
+                    Decision authority:{' '}
+                    {record.approvingAuthority?.name || 'Pending'}
+                  </p>
+                </div>
+                {own &&
+                  ['DRAFT', 'RETURNED_FOR_INFORMATION'].includes(
+                    record.status,
+                  ) && (
+                    <div className="space-y-2 border-t pt-3">
+                      <label className="block text-sm">
+                        Update reason
+                        <textarea
+                          className="input-notion"
+                          value={reason}
+                          onChange={(event) => setReason(event.target.value)}
+                        />
+                      </label>
+                      <button
+                        className="btn-outline"
+                        disabled={state.busy || !reason.trim()}
+                        onClick={() =>
+                          run(
+                            () =>
+                              api.releaseRequests.update(
+                                record.id,
+                                reason,
+                                record.version,
+                              ),
+                            'Request reason saved.',
+                          )
+                        }
+                      >
+                        Save reason
+                      </button>
+                    </div>
+                  )}
+                {record.returnReason && (
+                  <p className="notice border-amber-200 bg-amber-50 text-amber-900">
+                    Returned for information: {record.returnReason}
+                  </p>
+                )}
+                {record.scrutinyNotes && (
+                  <p className="text-sm">
+                    <strong>Scrutiny notes:</strong> {record.scrutinyNotes}
+                  </p>
+                )}
+                {record.decisionReason && (
+                  <p className="text-sm">
+                    <strong>Decision reason:</strong> {record.decisionReason}
+                  </p>
+                )}
+                {record.decisionNotes && (
+                  <p className="text-sm">
+                    Decision notes: {record.decisionNotes}
+                  </p>
+                )}
+                {record.status === 'COMPLETED' && (
+                  <div className="notice notice-success">
+                    Completion reference: {record.completionReference}
+                    <br />
+                    Evidence date: {record.completionDate}
+                    <br />
+                    Recorded by {record.completedBy?.name} at{' '}
+                    {formatDate(record.completedAt)}
+                    {record.completionNotes && <p>{record.completionNotes}</p>}
+                  </div>
+                )}
+              </section>
+              <section className="card-notion space-y-3">
+                <h2>Eligibility checklist</h2>
+                <p className="text-xs text-slate-500">
+                  Demo policy configuration captured when this request was
+                  created. Required items block forwarding and approval; there
+                  is no override.
+                </p>
+                {record.checklistSnapshot.map((item) => (
+                  <label
+                    key={item.id}
+                    className="flex items-start gap-3 py-2 text-sm border-b last:border-0"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={item.completed}
+                      disabled={!review || state.busy}
+                      onChange={(event) =>
+                        run(
+                          () =>
+                            api.releaseRequests.checklist(
+                              record.id,
+                              item.id,
+                              event.target.checked,
+                              record.version,
+                            ),
+                          'Checklist saved.',
+                        )
+                      }
+                      className="mt-1 accent-orange-700"
+                    />
+                    <span>
+                      {item.label}
+                      {item.isRequired && (
+                        <span className="block text-xs text-orange-700">
+                          Required
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </section>
+              <section className="card-notion space-y-3">
+                <h2>Supporting evidence</h2>
+                {record.documents.map((doc) => (
+                  <div key={doc.id} className="border-b pb-2 text-sm">
+                    <a
+                      className="text-orange-700 underline break-all"
+                      href={api.documents.downloadUrl(doc.id)}
+                    >
+                      {doc.originalFilename}
+                    </a>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Version {doc.version || 1} ·{' '}
+                      {doc.isSuperseded ? 'Superseded' : 'Current'} · Malware
+                      not scanned
+                    </p>
+                  </div>
+                ))}
+                {!record.documents.length && (
+                  <p className="text-sm text-slate-500">
+                    Attach evidence before submitting.
+                  </p>
+                )}
+                {uploadAllowed && (
+                  <fieldset disabled={state.busy} className="space-y-3 pt-2">
+                    <label className="block text-sm">
+                      Replace evidence (optional)
+                      <select
+                        className="input-notion"
+                        value={supersedes}
+                        onChange={(event) => setSupersedes(event.target.value)}
+                      >
+                        <option value="">Add another document</option>
+                        {record.documents
+                          .filter((doc) => !doc.isSuperseded)
+                          .map((doc) => (
+                            <option value={doc.id} key={doc.id}>
+                              {doc.originalFilename}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label className="block text-sm">
+                      Supporting PDF / JPG / PNG
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        className="block mt-2 text-xs"
+                        onChange={(event) =>
+                          setFile(event.target.files?.[0] || null)
+                        }
+                      />
+                    </label>
+                    <button
+                      className="btn-outline"
+                      disabled={!file || state.busy}
+                      onClick={() =>
+                        run(async () => {
+                          const data = new FormData();
+                          data.append('file', file!);
+                          data.append('releaseRequestId', record.id);
+                          data.append('version', String(record.version));
+                          data.append('category', 'RELEASE_SUPPORTING');
+                          if (supersedes)
+                            data.append('supersedesDocumentId', supersedes);
+                          await api.documents.upload(data);
+                          setFile(null);
+                          setSupersedes('');
+                        }, 'Evidence uploaded.')
+                      }
+                    >
+                      Upload evidence
+                    </button>
+                  </fieldset>
+                )}
+              </section>
+            </div>
+            <aside className="space-y-5">
+              <section className="card-notion space-y-3">
+                <h2>Next action</h2>
+                {own && record.status === 'DRAFT' && (
+                  <button
+                    className="btn-primary w-full"
+                    disabled={state.busy}
+                    onClick={() =>
+                      action(
+                        'Submit this release request and evidence?',
+                        () =>
+                          api.releaseRequests.submit(record.id, record.version),
+                        'Request submitted.',
+                      )
+                    }
+                  >
+                    Submit request
+                  </button>
+                )}
+                {officer &&
+                  ['SUBMITTED', 'RESUBMITTED'].includes(record.status) && (
+                    <button
+                      className="btn-primary w-full"
+                      disabled={state.busy}
+                      onClick={() =>
+                        run(
+                          () =>
+                            api.releaseRequests.review(
+                              record.id,
+                              record.version,
+                            ),
+                          'Review started.',
+                        )
+                      }
+                    >
+                      Start review
+                    </button>
+                  )}
+                {(review ||
+                  decide ||
+                  (own && record.status === 'RETURNED_FOR_INFORMATION')) && (
+                  <label className="block text-sm">
+                    {decide
+                      ? 'Decision reason'
+                      : review
+                        ? 'Scrutiny notes / return reason'
+                        : 'Information supplied'}
+                    <textarea
+                      className="input-notion mt-1"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                    />
+                  </label>
+                )}
+                {review && (
+                  <>
+                    <button
+                      className="btn-outline w-full"
+                      disabled={state.busy || !notes.trim()}
+                      onClick={() =>
+                        action(
+                          'Return this request for additional information?',
+                          () =>
+                            api.releaseRequests.returnForInfo(
+                              record.id,
+                              record.version,
+                              notes,
+                              notes,
+                            ),
+                          'Request returned.',
+                        )
+                      }
+                    >
+                      Return for information
+                    </button>
+                    <button
+                      className="btn-primary w-full"
+                      disabled={
+                        state.busy ||
+                        !notes.trim() ||
+                        record.checklistSnapshot.some(
+                          (item) => item.isRequired && !item.completed,
+                        )
+                      }
+                      onClick={() =>
+                        action(
+                          'Forward this complete checklist for authority decision?',
+                          () =>
+                            api.releaseRequests.forwardToAuthority(
+                              record.id,
+                              record.version,
+                              notes,
+                            ),
+                          'Forwarded to authority.',
+                        )
+                      }
+                    >
+                      Forward for decision
+                    </button>
+                  </>
+                )}
+                {own && record.status === 'RETURNED_FOR_INFORMATION' && (
+                  <button
+                    className="btn-primary w-full"
+                    disabled={state.busy || !notes.trim()}
+                    onClick={() =>
+                      action(
+                        'Resubmit this request with the supplied information?',
+                        () =>
+                          api.releaseRequests.resubmit(
+                            record.id,
+                            record.version,
+                            notes,
+                          ),
+                        'Request resubmitted.',
+                      )
+                    }
+                  >
+                    Resubmit request
+                  </button>
+                )}
+                {decide && (
+                  <>
+                    <label className="block text-sm">
+                      Additional decision notes
+                      <textarea
+                        className="input-notion"
+                        value={decisionNotes}
+                        onChange={(event) =>
+                          setDecisionNotes(event.target.value)
+                        }
+                      />
+                    </label>
+                    {(['APPROVE', 'REJECT'] as const).map((value) => (
+                      <button
+                        key={value}
+                        className={
+                          value === 'APPROVE'
+                            ? 'btn-primary w-full'
+                            : 'btn-outline w-full text-red-700'
+                        }
+                        disabled={state.busy || !notes.trim()}
+                        onClick={() =>
+                          action(
+                            `${value === 'APPROVE' ? 'Approve' : 'Reject'} this request with the recorded reason?`,
+                            () =>
+                              api.releaseRequests.decide(
+                                record.id,
+                                value,
+                                notes,
+                                record.version,
+                                decisionNotes,
+                              ),
+                            'Decision recorded.',
+                          )
+                        }
+                      >
+                        {value === 'APPROVE'
+                          ? 'Approve request'
+                          : 'Reject request'}
+                      </button>
+                    ))}
+                  </>
+                )}
+                {(officer || authority) && record.status === 'APPROVED' && (
+                  <>
+                    <p className="text-xs text-slate-500">
+                      Record completion evidence after the authorized external
+                      procedure. This action does not send a bank instruction.
+                    </p>
+                    <label className="block text-sm">
+                      Completion reference
+                      <input
+                        className="input-notion"
+                        value={completionReference}
+                        onChange={(event) =>
+                          setCompletionReference(event.target.value)
+                        }
+                      />
+                    </label>
+                    <label className="block text-sm">
+                      Evidence date
+                      <input
+                        type="date"
+                        className="input-notion"
+                        value={completionDate}
+                        onChange={(event) =>
+                          setCompletionDate(event.target.value)
+                        }
+                      />
+                    </label>
+                    <label className="block text-sm">
+                      Completion notes
+                      <textarea
+                        className="input-notion"
+                        value={notes}
+                        onChange={(event) => setNotes(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      className="btn-primary w-full"
+                      disabled={
+                        state.busy ||
+                        !completionReference.trim() ||
+                        !completionDate
+                      }
+                      onClick={() =>
+                        action(
+                          'Record completion evidence as a separate final step?',
+                          () =>
+                            api.releaseRequests.complete(
+                              record.id,
+                              completionReference,
+                              completionDate,
+                              record.version,
+                              notes,
+                            ),
+                          'Completion evidence recorded.',
+                        )
+                      }
+                    >
+                      Record completion
+                    </button>
+                  </>
+                )}
+                {!review &&
+                  !decide &&
+                  !(
+                    own &&
+                    ['DRAFT', 'RETURNED_FOR_INFORMATION'].includes(
+                      record.status,
+                    )
+                  ) &&
+                  !(
+                    officer &&
+                    ['SUBMITTED', 'RESUBMITTED'].includes(record.status)
+                  ) &&
+                  !((officer || authority) && record.status === 'APPROVED') && (
+                    <p className="text-sm text-slate-500">
+                      No action is assigned to your account at this stage.
+                    </p>
+                  )}
+              </section>
+              <section className="card-notion">
+                <h2 className="mb-4">Case timeline</h2>
+                <ol className="timeline">
+                  {record.history.map((event, index) => (
+                    <li key={index}>
+                      <p className="text-xs font-medium">
+                        {event.action.split('_').join(' ')}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        {formatDate(event.at)}
+                      </p>
+                      {event.notes && (
+                        <p className="text-xs mt-1 text-slate-600">
+                          {event.notes}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+                {!record.history.length && (
+                  <p className="text-xs text-slate-500">
+                    Draft created {formatDate(record.createdAt)}
+                  </p>
+                )}
+              </section>
+            </aside>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

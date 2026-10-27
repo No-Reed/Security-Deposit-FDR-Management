@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, getApiErrorMessage } from '../lib/api';
 import { StatusBadge } from '../components/common/StatusBadge';
 
 export const DiscrepanciesPage: React.FC = () => {
   const [records, setRecords] = useState<any[]>([]);
-  const [status, setStatus] = useState('');
+  const [query] = useSearchParams();
+  const [status, setStatus] = useState(query.get('status') || '');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [retry, setRetry] = useState(0);
@@ -53,9 +54,11 @@ export const DiscrepanciesPage: React.FC = () => {
           }}
         >
           <option value="">All statuses</option>
-          {['OPEN', 'RESPONDED', 'RESOLVED', 'DISMISSED'].map((value) => (
-            <option key={value}>{value}</option>
-          ))}
+          {['UNRESOLVED', 'OPEN', 'RESPONDED', 'RESOLVED', 'DISMISSED'].map(
+            (value) => (
+              <option key={value}>{value}</option>
+            ),
+          )}
         </select>
       </label>
       {error && (

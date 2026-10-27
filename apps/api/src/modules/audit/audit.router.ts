@@ -1,7 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { Role } from '@depositdesk/shared';
+import { Role, PaginationSchema } from '@depositdesk/shared';
 import { prisma } from '../../config/prisma';
 import { requireAuth, requireRole, AuthenticatedRequest } from '../../middleware/auth';
+import { scopedAuditWhere } from '../../lib/scope';
 import { paginate } from '../../lib/domain';
 
 export const auditRouter = Router();
@@ -12,11 +13,10 @@ auditRouter.use(requireRole(Role.SCRUTINY_OFFICER, Role.APPROVING_AUTHORITY, Rol
 auditRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = Math.min(parseInt(req.query.pageSize as string) || 20, 100);
-    const skip = (page - 1) * pageSize;
-
-    const where: any = {};
+    const { page, pageSize } = PaginationSchema.parse(req.query);
+    const skip = (page-1)*pageSize;
+    const scope = await scopedAuditWhere(authReq);
+    const where: any = { AND: [scope] };
     if (req.query.entityType) where.entityType = req.query.entityType;
     if (req.query.entityId) where.entityId = req.query.entityId;
     if (req.query.actorUserId) where.actorUserId = req.query.actorUserId;

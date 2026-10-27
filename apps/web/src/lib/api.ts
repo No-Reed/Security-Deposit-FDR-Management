@@ -26,7 +26,8 @@ export const apiClient = axios.create({
 let csrfToken: string | null = null;
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
-  if (axios.isAxiosError(error)) return error.response?.data?.error?.message || fallback;
+  if (axios.isAxiosError(error))
+    return error.response?.data?.error?.message || fallback;
   return fallback;
 }
 
@@ -49,7 +50,10 @@ export function getCsrfToken(): string | null {
 // Request interceptor to attach CSRF token and Request ID
 apiClient.interceptors.request.use((config) => {
   const token = getCsrfToken();
-  if (token && !['get', 'head', 'options'].includes(config.method?.toLowerCase() || '')) {
+  if (
+    token &&
+    !['get', 'head', 'options'].includes(config.method?.toLowerCase() || '')
+  ) {
     config.headers['x-csrf-token'] = token;
   }
   config.headers['x-request-id'] = crypto.randomUUID();
@@ -66,7 +70,7 @@ apiClient.interceptors.response.use(
   },
   (error: AxiosError) => {
     return Promise.reject(error);
-  }
+  },
 );
 
 // Types
@@ -126,7 +130,11 @@ export interface InstrumentDetail extends InstrumentSummary {
   };
   beneficiaryDetails?: string | null;
   submissionSnapshot?: any;
-  snapshots?: Array<{ id: string; submittedAt: string; payload: Record<string, any> }>;
+  snapshots?: Array<{
+    id: string;
+    submittedAt: string;
+    payload: Record<string, any>;
+  }>;
   predecessorInstrument?: {
     id: string;
     instrumentNumber: string;
@@ -188,57 +196,82 @@ export interface InstrumentDetail extends InstrumentSummary {
 
 export interface DashboardSummary {
   totalInstruments: number;
-  totalValue: number;
+  totalValue: string;
   activeCount: number;
   expiringSoonCount: number;
   maturedCount: number;
   expiredCount: number;
   pendingVerificationCount: number;
   discrepancyCount: number;
+  renewalPendingCount: number;
   openReleaseRequestsCount: number;
+  quality: {
+    recordsWithEvidence: number;
+    missingEvidence: number;
+    unresolvedCases: number;
+    reviewIntervalsHours: number[];
+  };
+  distribution: Record<string, number>;
+  thresholds: number[];
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    timestamp: string;
+    reason?: string;
+    actor?: { name: string };
+  }>;
 }
-
 export interface UpcomingMaturities {
-  bucket7Days: InstrumentSummary[];
-  bucket15Days: InstrumentSummary[];
-  bucket30Days: InstrumentSummary[];
-  bucket60Days: InstrumentSummary[];
-  bucket90Days: InstrumentSummary[];
-  matured: InstrumentSummary[];
+  buckets: Record<string, InstrumentSummary[]>;
+  totals: Record<string, number>;
 }
-
 export interface ReleaseRequestDetail {
   id: string;
+  referenceCode: string;
   instrumentId: string;
-  instrument: InstrumentSummary;
+  institutionId: string;
+  institution: { id: string; name: string };
+  instrument: {
+    id: string;
+    referenceCode: string;
+    instrumentNumber: string;
+    bankName: string;
+    amount: string;
+    lifecycleStatus: LifecycleStatus;
+  };
   requestType: string;
   reason: string;
   status: ReleaseRequestStatus;
   version: number;
-  scrutinyNotes?: string | null;
-  returnReason?: string | null;
-  returnObservations?: string | null;
-  decisionReason?: string | null;
-  decisionNotes?: string | null;
-  decidedAt?: string | null;
-  completionReference?: string | null;
-  completionDate?: string | null;
-  completionNotes?: string | null;
-  completedAt?: string | null;
+  checklistSnapshot: Array<{
+    id: string;
+    label: string;
+    isRequired: boolean;
+    completed: boolean;
+  }>;
+  scrutinyNotes?: string;
+  returnReason?: string;
+  decisionReason?: string;
+  decisionNotes?: string;
+  decidedAt?: string;
+  completionReference?: string;
+  completionDate?: string;
+  completionNotes?: string;
+  completedAt?: string;
   submittedBy: { id: string; name: string };
-  scrutinyOfficer?: { id: string; name: string } | null;
-  approvingAuthority?: { id: string; name: string } | null;
-  completedBy?: { id: string; name: string } | null;
+  scrutinyOfficer?: { id: string; name: string };
+  approvingAuthority?: { id: string; name: string };
+  completedBy?: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
-  documents: Array<{
-    id: string;
-    category: DocumentCategory;
-    originalFilename: string;
-    fileSizeBytes: number;
+  history: Array<{
+    action: string;
+    at: string;
+    byUserId?: string;
+    notes?: string;
   }>;
+  documents: InstrumentDetail['documents'];
 }
-
 export interface NotificationItem {
   id: string;
   userId: string;
@@ -287,7 +320,10 @@ export const api = {
       return res.data.user as CurrentUser;
     },
     changePassword: async (currentPassword: string, newPassword: string) => {
-      const res = await apiClient.post('/auth/change-password', { currentPassword, newPassword });
+      const res = await apiClient.post('/auth/change-password', {
+        currentPassword,
+        newPassword,
+      });
       return res.data;
     },
   },
@@ -306,7 +342,14 @@ export const api = {
 
   // Instruments
   instruments: {
-    list: async (params?: Record<string, any>): Promise<{ data: InstrumentSummary[]; total: number; page: number; pageSize: number }> => {
+    list: async (
+      params?: Record<string, any>,
+    ): Promise<{
+      data: InstrumentSummary[];
+      total: number;
+      page: number;
+      pageSize: number;
+    }> => {
       const res = await apiClient.get('/instruments', { params });
       return res.data;
     },
@@ -323,37 +366,86 @@ export const api = {
       return res.data;
     },
     submit: async (id: string, version: number) => {
-      const res = await apiClient.post(`/instruments/${id}/submit`, { version });
+      const res = await apiClient.post(`/instruments/${id}/submit`, {
+        version,
+      });
       return res.data;
     },
-    review: async (id: string, version: number, reason: string, notes?: string) => {
-      const res = await apiClient.post(`/instruments/${id}/review`, { version, reason, notes });
+    review: async (
+      id: string,
+      version: number,
+      reason: string,
+      notes?: string,
+    ) => {
+      const res = await apiClient.post(`/instruments/${id}/review`, {
+        version,
+        reason,
+        notes,
+      });
       return res.data;
     },
     verify: async (id: string, version: number, reason: string) => {
-      const res = await apiClient.post(`/instruments/${id}/verify`, { version, reason });
+      const res = await apiClient.post(`/instruments/${id}/verify`, {
+        version,
+        reason,
+      });
       return res.data;
     },
     requestCorrection: async (id: string, version: number, reason: string) => {
-      return (await apiClient.post(`/instruments/${id}/action-required`, { version, reason })).data;
+      return (
+        await apiClient.post(`/instruments/${id}/action-required`, {
+          version,
+          reason,
+        })
+      ).data;
     },
-    history: async (id: string): Promise<{ auditEvents: Array<{ id: string; action: string; timestamp: string; reason?: string; actor?: { name: string } }>; snapshots: Array<{ id: string; submittedAt: string; payload: Record<string, any> }> }> => {
+    history: async (
+      id: string,
+    ): Promise<{
+      auditEvents: Array<{
+        id: string;
+        action: string;
+        timestamp: string;
+        reason?: string;
+        actor?: { name: string };
+      }>;
+      snapshots: Array<{
+        id: string;
+        submittedAt: string;
+        payload: Record<string, any>;
+      }>;
+    }> => {
       return (await apiClient.get(`/instruments/${id}/history`)).data;
     },
     reject: async (id: string, version: number, reason: string) => {
-      const res = await apiClient.post(`/instruments/${id}/reject`, { version, reason });
+      const res = await apiClient.post(`/instruments/${id}/reject`, {
+        version,
+        reason,
+      });
       return res.data;
     },
     resubmit: async (id: string, version: number, corrections: string) => {
-      const res = await apiClient.post(`/instruments/${id}/resubmit`, { version, corrections });
+      const res = await apiClient.post(`/instruments/${id}/resubmit`, {
+        version,
+        corrections,
+      });
       return res.data;
     },
     close: async (id: string, version: number, reason: string) => {
-      const res = await apiClient.post(`/instruments/${id}/close`, { version, reason });
+      const res = await apiClient.post(`/instruments/${id}/close`, {
+        version,
+        reason,
+      });
       return res.data;
     },
-    createRenewal: async (predecessorId: string, data: any): Promise<InstrumentDetail> => {
-      const res = await apiClient.post(`/instruments/${predecessorId}/renew`, data);
+    createRenewal: async (
+      predecessorId: string,
+      data: any,
+    ): Promise<InstrumentDetail> => {
+      const res = await apiClient.post(
+        `/instruments/${predecessorId}/renewal`,
+        data,
+      );
       return res.data;
     },
   },
@@ -376,7 +468,10 @@ export const api = {
   // Verification
   verification: {
     record: async (instrumentId: string, data: any) => {
-      const res = await apiClient.post(`/verification/instruments/${instrumentId}`, data);
+      const res = await apiClient.post(
+        `/verification/instruments/${instrumentId}`,
+        data,
+      );
       return res.data;
     },
   },
@@ -391,15 +486,26 @@ export const api = {
       const res = await apiClient.post('/discrepancies', data);
       return res.data;
     },
-    resolve: async (id: string, resolutionNotes: string, status: 'RESPONDED' | 'RESOLVED' | 'DISMISSED', version?: number) => {
-      const res = await apiClient.patch(`/discrepancies/${id}/resolve`, { resolutionNotes, status, version });
+    resolve: async (
+      id: string,
+      resolutionNotes: string,
+      status: 'RESPONDED' | 'RESOLVED' | 'DISMISSED',
+      version?: number,
+    ) => {
+      const res = await apiClient.patch(`/discrepancies/${id}/resolve`, {
+        resolutionNotes,
+        status,
+        version,
+      });
       return res.data;
     },
   },
 
   // Release Requests
   releaseRequests: {
-    list: async (params?: Record<string, any>): Promise<{ data: ReleaseRequestDetail[]; total: number }> => {
+    list: async (
+      params?: Record<string, any>,
+    ): Promise<{ data: ReleaseRequestDetail[]; total: number }> => {
       const res = await apiClient.get('/release-requests', { params });
       return res.data;
     },
@@ -411,32 +517,84 @@ export const api = {
       const res = await apiClient.post('/release-requests', data);
       return res.data;
     },
+    submit: async (id: string, version: number) =>
+      (await apiClient.post(`/release-requests/${id}/submit`, { version }))
+        .data,
+    checklist: async (
+      id: string,
+      itemId: string,
+      completed: boolean,
+      version: number,
+    ) =>
+      (
+        await apiClient.patch(`/release-requests/${id}/checklist`, {
+          itemId,
+          completed,
+          version,
+        })
+      ).data,
+    update: async (id: string, reason: string, version: number) =>
+      (await apiClient.patch(`/release-requests/${id}`, { reason, version }))
+        .data,
     review: async (id: string, version: number, notes?: string) => {
-      const res = await apiClient.post(`/release-requests/${id}/review`, { version, notes });
-      return res.data;
-    },
-    returnForInfo: async (id: string, version: number, reason: string, observations?: string) => {
-      const res = await apiClient.post(`/release-requests/${id}/return`, { version, reason, observations });
-      return res.data;
-    },
-    forwardToAuthority: async (id: string, version: number, notes?: string) => {
-      const res = await apiClient.post(`/release-requests/${id}/forward`, { version, notes });
-      return res.data;
-    },
-    resubmit: async (id: string, version: number, information: string) => {
-      const res = await apiClient.post(`/release-requests/${id}/resubmit`, { version, information });
-      return res.data;
-    },
-    decide: async (id: string, action: 'APPROVE' | 'REJECT', decisionReason: string, version: number, notes?: string) => {
-      const res = await apiClient.post(`/release-requests/${id}/decision`, {
-        action,
-        decisionReason,
+      const res = await apiClient.post(`/release-requests/${id}/review`, {
         version,
         notes,
       });
       return res.data;
     },
-    complete: async (id: string, completionReference: string, completionDate: string, version: number, notes?: string) => {
+    returnForInfo: async (
+      id: string,
+      version: number,
+      reason: string,
+      observations?: string,
+    ) => {
+      const res = await apiClient.post(`/release-requests/${id}/return`, {
+        version,
+        reason,
+        observations,
+      });
+      return res.data;
+    },
+    forwardToAuthority: async (id: string, version: number, notes?: string) => {
+      const res = await apiClient.post(`/release-requests/${id}/forward`, {
+        version,
+        notes,
+      });
+      return res.data;
+    },
+    resubmit: async (id: string, version: number, information: string) => {
+      const res = await apiClient.post(`/release-requests/${id}/resubmit`, {
+        version,
+        information,
+      });
+      return res.data;
+    },
+    decide: async (
+      id: string,
+      action: 'APPROVE' | 'REJECT',
+      decisionReason: string,
+      version: number,
+      notes?: string,
+    ) => {
+      const res = await apiClient.post(
+        `/release-requests/${id}/${action === 'APPROVE' ? 'approve' : 'reject'}`,
+        {
+          action,
+          decisionReason,
+          version,
+          notes,
+        },
+      );
+      return res.data;
+    },
+    complete: async (
+      id: string,
+      completionReference: string,
+      completionDate: string,
+      version: number,
+      notes?: string,
+    ) => {
       const res = await apiClient.post(`/release-requests/${id}/complete`, {
         completionReference,
         completionDate,
@@ -452,8 +610,13 @@ export const api = {
     list: async (): Promise<NotificationItem[]> => {
       const res = await apiClient.get('/notifications');
       return res.data.data.map((item: any) => ({
-        ...item, userId: item.recipientUserId, isRead: Boolean(item.readAt),
-        linkUrl: item.relatedEntityType === 'Instrument' ? `/instruments/${item.relatedEntityId}` : '/releases',
+        ...item,
+        userId: item.recipientUserId,
+        isRead: Boolean(item.readAt),
+        linkUrl:
+          item.relatedEntityType === 'Instrument'
+            ? `/instruments/${item.relatedEntityId}`
+            : '/releases',
       }));
     },
     markRead: async (id: string) => {
@@ -468,7 +631,9 @@ export const api = {
 
   // Audit
   audit: {
-    list: async (params?: Record<string, any>): Promise<{ data: AuditEventItem[]; total: number }> => {
+    list: async (
+      params?: Record<string, any>,
+    ): Promise<{ data: AuditEventItem[]; total: number }> => {
       const res = await apiClient.get('/audit-events', { params });
       return res.data;
     },
@@ -476,15 +641,17 @@ export const api = {
 
   // Reports
   reports: {
-    exportInstrumentsCsv: () => '/api/v1/reports/instruments/csv',
-    exportMaturitiesCsv: () => '/api/v1/reports/maturities/csv',
-    exportAuditEventsCsv: () => '/api/v1/reports/audit-events/csv',
+    exportInstrumentsCsv: () => '/api/v1/reports/instruments.csv',
+    exportMaturitiesCsv: () => '/api/v1/reports/maturities.csv',
+    exportAuditEventsCsv: () => '/api/v1/reports/audit-events.csv',
   },
 
   // Admin
   admin: {
     getUsers: async () => {
-      const res = await apiClient.get('/admin/users');
+      const res = await apiClient.get('/admin/users', {
+        params: { pageSize: 100 },
+      });
       return res.data;
     },
     createUser: async (data: any) => {
@@ -495,8 +662,29 @@ export const api = {
       const res = await apiClient.patch(`/admin/users/${id}`, data);
       return res.data;
     },
+    getScope: async (id: string) =>
+      (await apiClient.get(`/admin/institution-scope/${id}`)).data,
+    addScope: async (userId: string, institutionId: string) =>
+      (
+        await apiClient.post('/admin/institution-scope', {
+          userId,
+          institutionId,
+        })
+      ).data,
+    removeScope: async (userId: string, institutionId: string) =>
+      (
+        await apiClient.delete(
+          `/admin/institution-scope/${userId}/${institutionId}`,
+        )
+      ).data,
+    createChecklistItem: async (data: any) =>
+      (await apiClient.post('/admin/release-checklist', data)).data,
+    updateChecklistItem: async (id: string, data: any) =>
+      (await apiClient.patch(`/admin/release-checklist/${id}`, data)).data,
     getInstitutions: async () => {
-      const res = await apiClient.get('/institutions');
+      const res = await apiClient.get('/institutions', {
+        params: { pageSize: 100 },
+      });
       return res.data;
     },
     createInstitution: async (data: any) => {
@@ -508,15 +696,15 @@ export const api = {
       return res.data;
     },
     updateSystemSetting: async (key: string, value: string) => {
-      const res = await apiClient.put(`/admin/settings/${key}`, { value });
+      const res = await apiClient.patch('/admin/settings', { key, value });
       return res.data;
     },
     getChecklist: async () => {
-      const res = await apiClient.get('/admin/checklist');
+      const res = await apiClient.get('/admin/release-checklist');
       return res.data;
     },
     triggerMaturityCheck: async () => {
-      const res = await apiClient.post('/admin/jobs/maturity-check');
+      const res = await apiClient.post('/admin/maturity-check');
       return res.data;
     },
   },

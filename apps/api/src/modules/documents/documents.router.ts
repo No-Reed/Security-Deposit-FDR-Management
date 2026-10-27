@@ -157,7 +157,7 @@ documentsRouter.post(
             );
           await tx.releaseRequest.update({
             where: { id: release.id, version: body.version },
-            data: { version: { increment: 1 } },
+            data: { version: { increment: 1 }, checklistSnapshot: (release.checklistSnapshot as any[]).map(item=>({...item,completed:false})) },
           });
         }
         let version = 1;

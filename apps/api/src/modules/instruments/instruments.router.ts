@@ -31,150 +31,22 @@ import {
 import { config, MATURITY_ALERT_DAYS } from '../../config/env';
 import { LifecycleStatus as PrismaLifecycle } from '@prisma/client';
 
+import { instrumentRecords } from '../../lib/queries';
+import { operationalSettings } from '../../lib/settings';
 import { instrumentView, submissionSnapshot } from '../../lib/instruments';
 
 export const instrumentsRouter = Router();
 instrumentsRouter.use(requireAuth as any);
 
-// Build where clause based on role/scope
-async function buildInstrumentWhere(
-  authReq: AuthenticatedRequest,
-  filters: any,
-) {
-  const { role, institutionId } = authReq.user;
-  const where: any = {};
-
-  if (role === Role.INSTITUTION_USER) {
-    if (!institutionId) return null;
-    where.institutionId = institutionId;
-  } else if (
-    role === Role.SCRUTINY_OFFICER ||
-    role === Role.APPROVING_AUTHORITY
-  ) {
-    const scopes = await prisma.staffInstitutionScope.findMany({
-      where: { userId: authReq.user.id },
-      select: { institutionId: true },
-    });
-    where.institutionId = { in: scopes.map((s) => s.institutionId) };
-  }
-  // SA: no institution filter
-
-  // Apply filters
-  if (filters.institutionId) {
-    // Narrow the authorized scope; never replace it with client input.
-    where.AND = [{ institutionId: filters.institutionId }];
-  }
-  if (filters.queue === 'true')
-    where.lifecycleStatus = {
-      in: ['SUBMITTED', 'UNDER_REVIEW', 'ACTION_REQUIRED', 'RESUBMITTED'],
-    };
-  if (filters.lifecycleStatus) {
-    if (
-      filters.queue === 'true' &&
-      !['SUBMITTED', 'UNDER_REVIEW', 'ACTION_REQUIRED', 'RESUBMITTED'].includes(
-        filters.lifecycleStatus,
-      )
-    )
-      where.AND = [...(where.AND || []), { id: { in: [] } }];
-    where.lifecycleStatus = filters.lifecycleStatus;
-  }
-  if (filters.instrumentType) where.instrumentType = filters.instrumentType;
-  if (filters.bankName)
-    where.bankName = { contains: filters.bankName, mode: 'insensitive' };
-  if (filters.search) {
-    where.OR = [
-      { referenceCode: { contains: filters.search, mode: 'insensitive' } },
-      { instrumentNumber: { contains: filters.search, mode: 'insensitive' } },
-      { bankName: { contains: filters.search, mode: 'insensitive' } },
-      {
-        institution: {
-          name: { contains: filters.search, mode: 'insensitive' },
-        },
-      },
-    ];
-  }
-  if (filters.issueDateFrom)
-    where.issueDate = {
-      ...(where.issueDate || {}),
-      gte: new Date(filters.issueDateFrom),
-    };
-  if (filters.issueDateTo)
-    where.issueDate = {
-      ...(where.issueDate || {}),
-      lte: new Date(filters.issueDateTo),
-    };
-  if (filters.maturityDateFrom)
-    where.maturityDate = {
-      ...(where.maturityDate || {}),
-      gte: new Date(filters.maturityDateFrom),
-    };
-  if (filters.maturityDateTo)
-    where.maturityDate = {
-      ...(where.maturityDate || {}),
-      lte: new Date(filters.maturityDateTo),
-    };
-
-  return where;
-}
-
-const attachDerivedStatus = instrumentView;
-
-// GET /instruments
-instrumentsRouter.get(
-  '/',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const authReq = req as AuthenticatedRequest;
-      const filters = InstrumentFiltersSchema.parse(req.query);
-      const { page, pageSize } = filters;
-      const skip = (page - 1) * pageSize;
-
-      const where = await buildInstrumentWhere(authReq, filters);
-      if (where === null) return res.json(paginate([], 0, page, pageSize));
-
-      const instruments = await prisma.instrument.findMany({
-        where,
-        orderBy: [
-          filters.sortBy ? { [filters.sortBy]: filters.sortOrder || 'desc' } : { createdAt: 'desc' },
-          { id: 'asc' },
-        ],
-        include: {
-          institution: { select: { id: true, name: true, aicteId: true } },
-          successor: { select: { id: true, lifecycleStatus: true } },
-          releaseRequests: { select: { status: true } },
-          verifications: { orderBy: { createdAt: 'desc' }, take: 1 },
-          _count: {
-            select: {
-              documents: true,
-              discrepancies: {
-                where: { status: { in: ['OPEN', 'RESPONDED'] } },
-              },
-              verifications: true,
-            },
-          },
-        },
-      });
-
-      const withDerived = instruments.map(attachDerivedStatus);
-
-      // Filter by dateStatus if requested (post-process since it's derived)
-      const filtered = filters.dateStatus
-        ? withDerived.filter((i) => i.dateStatus === filters.dateStatus)
-        : withDerived;
-
-      res.json(
-        paginate(
-          filtered.slice(skip, skip + pageSize),
-          filtered.length,
-          page,
-          pageSize,
-        ),
-      );
-    } catch (err) {
-      next(err);
-    }
-  },
-);
+// All registry/report/dashboard reads use the same scoped, derived model.
+instrumentsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const filters = InstrumentFiltersSchema.parse(req.query);
+    const records = await instrumentRecords(req as AuthenticatedRequest, filters);
+    const start = (filters.page - 1) * filters.pageSize;
+    res.json(paginate(records.slice(start, start + filters.pageSize), records.length, filters.page, filters.pageSize));
+  } catch (error) { next(error); }
+});
 
 // POST /instruments
 instrumentsRouter.post(
@@ -342,7 +214,7 @@ instrumentsRouter.get(
       // Authorization check
       await requireInstitutionAccess(instrument.institutionId, req);
 
-      res.json(attachDerivedStatus(instrument));
+      res.json(instrumentView(instrument, await operationalSettings()));
     } catch (err) {
       next(err);
     }
@@ -1168,6 +1040,7 @@ instrumentsRouter.post(
       }
 
       const renewal = await prisma.$transaction(async (tx) => {
+        await tx.instrument.update({ where: { id, version: parsed.data.version }, data: { version: { increment: 1 } } });
         const created = await tx.instrument.create({
           data: {
             referenceCode: generateReferenceCode('DD'),

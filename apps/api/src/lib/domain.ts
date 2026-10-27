@@ -8,8 +8,8 @@ export function deriveRenewalStatus(
   matured: boolean,
   successorLifecycleStatus?: LifecycleStatus | null
 ): RenewalStatus {
-  if (!matured) return RenewalStatus.NONE;
-  if (!successorLifecycleStatus) return RenewalStatus.REQUIRED;
+  if (!successorLifecycleStatus) return matured ? RenewalStatus.REQUIRED : RenewalStatus.NONE;
+  if (successorLifecycleStatus === LifecycleStatus.REJECTED) return RenewalStatus.REQUIRED;
   if (successorLifecycleStatus === LifecycleStatus.VERIFIED || successorLifecycleStatus === LifecycleStatus.CLOSED) {
     return RenewalStatus.COMPLETED;
   }

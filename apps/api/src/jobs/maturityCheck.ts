@@ -1,151 +1,159 @@
 import cron from 'node-cron';
 import { prisma } from '../config/prisma';
 import { logger } from '../config/logger';
-import { config, MATURITY_ALERT_DAYS } from '../config/env';
-import { deriveDateStatus } from '../lib/dates';
+import { deriveDateStatus, daysUntil } from '../lib/dates';
+import { operationalSettings } from '../lib/settings';
+import { writeAuditEvent } from '../lib/audit';
 
-export async function runMaturityCheck(): Promise<{ checked: number; notificationsCreated: number; escalations: number }> {
-  logger.info('Running maturity check job');
+export interface EmailAdapter {
+  send(
+    to: string,
+    subject: string,
+    message: string,
+  ): Promise<{ delivered: boolean }>;
+}
+// Only in-app delivery is configured. No email-delivery claim is made.
+export const emailAdapter: EmailAdapter = {
+  async send() {
+    return { delivered: false };
+  },
+};
 
-  const maxAlertDays = MATURITY_ALERT_DAYS[0] || 90;
-  let notificationsCreated = 0;
-  let escalations = 0;
-
-  const instruments = await prisma.instrument.findMany({
-    where: {
-      lifecycleStatus: { notIn: ['REJECTED', 'CLOSED'] },
-    },
+export async function runMaturityCheck() {
+  const settings = await operationalSettings();
+  let notificationsCreated = 0,
+    escalations = 0;
+  const records = await prisma.instrument.findMany({
+    where: { lifecycleStatus: { notIn: ['DRAFT', 'REJECTED', 'CLOSED'] } },
     include: {
       institution: {
         include: {
-          users: { where: { isActive: true }, select: { id: true } },
-          staffScopes: {
-            include: {
-              user: { select: { id: true, isActive: true, role: true } },
-            },
-          },
+          users: { where: { isActive: true, role: 'INSTITUTION_USER' } },
+          staffScopes: { include: { user: true } },
         },
       },
-      releaseRequests: { where: { status: { notIn: ['REJECTED', 'COMPLETED'] } }, select: { id: true } },
-      successor: { select: { id: true, lifecycleStatus: true } },
+      successor: true,
+      releaseRequests: true,
     },
   });
-
-  for (const instrument of instruments) {
+  for (const record of records) {
+    if (
+      record.releaseRequests.some((item) => item.status === 'COMPLETED') ||
+      (record.successor &&
+        ['VERIFIED', 'CLOSED'].includes(record.successor.lifecycleStatus))
+    )
+      continue;
     const derived = deriveDateStatus(
-      instrument.maturityDate,
-      instrument.validityEndDate,
-      maxAlertDays,
-      config.APP_TIMEZONE
+      record.maturityDate,
+      record.validityEndDate,
+      settings.alertDays,
+      settings.timezone,
     );
-
-    const effectiveEnd = instrument.validityEndDate ?? instrument.maturityDate;
-    const effectiveEndStr = effectiveEnd.toISOString().split('T')[0];
-
-    // Collect recipients
-    const recipientIds = new Set<string>();
-    for (const u of instrument.institution.users) recipientIds.add(u.id);
-    for (const scope of instrument.institution.staffScopes) {
-      if (scope.user && scope.user.isActive && ['SCRUTINY_OFFICER', 'APPROVING_AUTHORITY'].includes(scope.user.role)) {
-        recipientIds.add(scope.user.id);
-      }
-    }
-
-    // Threshold reminders
-    for (const thresholdDays of MATURITY_ALERT_DAYS) {
-      if (derived.daysRemaining !== null && derived.daysRemaining === thresholdDays) {
-        for (const recipientId of recipientIds) {
-          const dedupeKey = `maturity:${instrument.id}:${thresholdDays}:${effectiveEndStr}:${recipientId}`;
-          try {
-            await prisma.notification.create({
-              data: {
-                recipientUserId: recipientId,
-                institutionId: instrument.institutionId,
-                type: 'MATURITY_REMINDER',
-                title: `FDR Maturing in ${thresholdDays} days`,
-                message: `Instrument ${instrument.referenceCode} (${instrument.bankName} - ${instrument.instrumentNumber}) matures on ${effectiveEndStr}. ${thresholdDays} days remaining.`,
-                relatedEntityType: 'Instrument',
-                relatedEntityId: instrument.id,
-                dueAt: effectiveEnd,
-                dedupeKey,
-                deliveryStatus: 'DELIVERED',
-                sentAt: new Date(),
-              },
-            });
-            notificationsCreated++;
-          } catch (err: any) {
-            // Unique constraint violation = already sent (idempotent)
-            if (err.code !== 'P2002') {
-              logger.error({ err, instrumentId: instrument.id, threshold: thresholdDays }, 'Failed to create notification');
-            }
-          }
-        }
-      }
-    }
-
-    // Escalation: matured/expired with no renewal or release action
-    if (derived.dateStatus === 'MATURED' || derived.dateStatus === 'EXPIRED') {
-      const hasAction =
-        instrument.successor !== null ||
-        instrument.releaseRequests.length > 0;
-
-      if (!hasAction) {
-        const escalationLevel = 1; // MVP: single escalation level
-        const dedupeKey = `escalation:${instrument.id}:${escalationLevel}:${effectiveEndStr}`;
-
-        // Also notify AA
-        const approvers = await prisma.user.findMany({
-          where: { role: 'APPROVING_AUTHORITY', isActive: true },
-          select: { id: true },
+    const end = derived.effectiveEnd.toISOString().slice(0, 10);
+    const staff = record.institution.staffScopes
+      .map((item) => item.user)
+      .filter((user) => user.isActive);
+    const reminderRecipients = [
+      ...record.institution.users,
+      ...staff.filter((user) => user.role === 'SCRUTINY_OFFICER'),
+    ];
+    const threshold = settings.thresholds.find(
+      (value) => derived.daysRemaining === value,
+    );
+    const matured = ['MATURED', 'EXPIRED'].includes(derived.dateStatus);
+    const age = -daysUntil(
+      derived.dateStatus === 'EXPIRED'
+        ? record.validityEndDate!
+        : record.maturityDate,
+      settings.timezone,
+    );
+    const action =
+      (record.successor && record.successor.lifecycleStatus !== 'REJECTED') ||
+      record.releaseRequests.some(
+        (item) => !['REJECTED'].includes(item.status),
+      );
+    const level =
+      matured && !action && age >= settings.escalationDays
+        ? Math.floor(
+            (age - settings.escalationDays) / settings.escalationRepeatDays,
+          ) + 1
+        : 0;
+    const deliveries: Array<{
+      userId: string;
+      key: string;
+      type: string;
+      title: string;
+      message: string;
+    }> = [];
+    if (threshold !== undefined && !matured)
+      for (const user of reminderRecipients)
+        deliveries.push({
+          userId: user.id,
+          key: `${record.id}:${threshold}:${end}:${user.id}`,
+          type: 'MATURITY_REMINDER',
+          title: `Instrument deadline in ${threshold} days`,
+          message: `${record.referenceCode} reaches its maturity/validity deadline on ${end}. Review renewal or other required action.`,
         });
-        for (const approver of approvers) recipientIds.add(approver.id);
-
-        for (const recipientId of recipientIds) {
-          const recipientDedupeKey = `${dedupeKey}:${recipientId}`;
-          try {
-            await prisma.notification.create({
-              data: {
-                recipientUserId: recipientId,
-                institutionId: instrument.institutionId,
-                type: 'MATURITY_ESCALATION',
-                title: 'ESCALATION: Matured instrument without action',
-                message: `Instrument ${instrument.referenceCode} (${instrument.bankName}) matured/expired with no renewal or release request. Immediate action required.`,
-                relatedEntityType: 'Instrument',
-                relatedEntityId: instrument.id,
-                dueAt: effectiveEnd,
-                dedupeKey: recipientDedupeKey,
-                deliveryStatus: 'DELIVERED',
-                sentAt: new Date(),
-              },
-            });
-            escalations++;
-          } catch (err: any) {
-            if (err.code !== 'P2002') {
-              logger.error({ err, instrumentId: instrument.id }, 'Failed to create escalation notification');
-            }
-          }
-        }
+    if (level)
+      for (const user of staff.filter((user) =>
+        ['SCRUTINY_OFFICER', 'APPROVING_AUTHORITY'].includes(user.role),
+      ))
+        deliveries.push({
+          userId: user.id,
+          key: `${record.id}:escalation:${level}:${end}:${user.id}`,
+          type: 'MATURITY_ESCALATION',
+          title: 'Overdue instrument requires follow-up',
+          message: `${record.referenceCode} is ${age} days past maturity/expiry with no current replacement or release action. Escalation ${level}.`,
+        });
+    for (const delivery of deliveries) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          const notification = await tx.notification.create({
+            data: {
+              recipientUserId: delivery.userId,
+              institutionId: record.institutionId,
+              type: delivery.type,
+              title: delivery.title,
+              message: delivery.message,
+              relatedEntityType: 'Instrument',
+              relatedEntityId: record.id,
+              dueAt: derived.effectiveEnd,
+              dedupeKey: delivery.key,
+              deliveryChannel: 'IN_APP',
+              deliveryStatus: 'DELIVERED',
+              sentAt: new Date(),
+            },
+          });
+          await writeAuditEvent(tx, {
+            action: 'NOTIFICATION_CREATED',
+            entityType: 'Instrument',
+            entityId: record.id,
+            metadata: {
+              notificationId: notification.id,
+              channel: 'IN_APP',
+              type: delivery.type,
+            },
+          });
+        });
+        if (delivery.type === 'MATURITY_REMINDER') notificationsCreated++;
+        else escalations++;
+      } catch (error: any) {
+        if (error.code !== 'P2002') throw error;
       }
     }
   }
-
-  logger.info({ checked: instruments.length, notificationsCreated, escalations }, 'Maturity check complete');
-  return { checked: instruments.length, notificationsCreated, escalations };
+  return { checked: records.length, notificationsCreated, escalations };
 }
-
-let cronTask: cron.ScheduledTask | null = null;
-
+let scheduled: cron.ScheduledTask | undefined;
 export function startMaturityJob() {
-  if (cronTask) return;
-
-  // Run daily at 6 AM IST (00:30 UTC)
-  cronTask = cron.schedule('30 0 * * *', async () => {
-    try {
-      await runMaturityCheck();
-    } catch (err) {
-      logger.error(err, 'Maturity check job failed');
-    }
-  });
-
-  logger.info('Maturity check cron job started (daily at 06:00 IST)');
+  if (scheduled) return;
+  scheduled = cron.schedule(
+    '0 6 * * *',
+    () => {
+      runMaturityCheck().catch((error) =>
+        logger.error({ error }, 'Maturity check failed'),
+      );
+    },
+    { timezone: 'Asia/Kolkata' },
+  );
 }

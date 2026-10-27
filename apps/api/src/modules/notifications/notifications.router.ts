@@ -1,3 +1,4 @@
+import { PaginationSchema } from '@depositdesk/shared';
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../../config/prisma';
 import { requireAuth, AuthenticatedRequest } from '../../middleware/auth';
@@ -9,8 +10,7 @@ notificationsRouter.use(requireAuth as any);
 notificationsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthenticatedRequest;
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = Math.min(parseInt(req.query.pageSize as string) || 20, 100);
+    const { page, pageSize } = PaginationSchema.parse(req.query);
     const skip = (page - 1) * pageSize;
     const unreadOnly = req.query.unread === 'true';
 

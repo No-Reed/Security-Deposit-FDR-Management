@@ -312,6 +312,9 @@ model ReleaseRequest {
   decisionReason      String?
   completedById       String?
   completedAt         DateTime?
+  decisionNotes       String?
+  completionDate      DateTime? @db.Date
+  completionNotes     String?
   completionReference String?
   version             Int                  @default(1)
   createdAt           DateTime             @default(now())

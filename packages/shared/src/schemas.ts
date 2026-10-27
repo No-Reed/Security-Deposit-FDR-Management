@@ -97,8 +97,8 @@ export const RecordVerificationSchema = z
     documentReviewStatus: z.nativeEnum(DocumentReviewStatus),
     independentVerificationStatus: z.nativeEnum(IndependentVerificationStatus),
     sourceType: z.string().optional().nullable(),
-    sourceName: z.string().optional().nullable(),
-    referenceNumber: z.string().optional().nullable(),
+    sourceName: z.string().trim().optional().nullable(),
+    referenceNumber: z.string().trim().optional().nullable(),
     result: z.string().trim().min(1),
     notes: z.string().optional().nullable(),
   })
@@ -144,14 +144,14 @@ export const CreateReleaseRequestSchema = z.object({
 });
 
 export const ReleaseDecisionSchema = z.object({
-  decisionReason: z.string().min(1).max(2000),
+  decisionReason: z.string().trim().min(1).max(2000),
   notes: z.string().optional().nullable(),
   version: z.number().int().positive(),
 });
 
 export const ReleaseCompletionSchema = z.object({
-  completionReference: z.string().min(1).max(500),
-  completionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  completionReference: z.string().trim().min(1).max(500),
+  completionDate: BusinessDateSchema,
   notes: z.string().optional().nullable(),
   version: z.number().int().positive(),
 });
@@ -186,6 +186,22 @@ export const InstrumentFiltersSchema = PaginationSchema.extend({
   search: z.string().optional(),
   institutionId: z.string().cuid().optional(),
   lifecycleStatus: z.nativeEnum(LifecycleStatus).optional(),
+  monitoring: z.enum(['true', 'false']).optional(),
+  overdue: z.enum(['true', 'false']).optional(),
+  awaitingVerification: z.enum(['true', 'false']).optional(),
+  renewals: z.enum(['all', 'pending']).optional(),
+  renewalStatus: z
+    .enum(['NONE', 'REQUIRED', 'IN_PROGRESS', 'COMPLETED'])
+    .optional(),
+  releaseStatus: z
+    .enum(['NONE', 'OPEN', 'APPROVED', 'COMPLETED', 'REJECTED'])
+    .optional(),
+  verificationStatus: z.nativeEnum(IndependentVerificationStatus).optional(),
+  discrepancyStatus: z
+    .enum(['OPEN', 'RESPONDED', 'RESOLVED', 'DISMISSED'])
+    .optional(),
+  daysFrom: z.coerce.number().int().optional(),
+  daysTo: z.coerce.number().int().optional(),
   queue: z.enum(['true', 'false']).optional(),
   instrumentType: z.nativeEnum(InstrumentType).optional(),
   bankName: z.string().optional(),
@@ -209,6 +225,7 @@ export const InstrumentFiltersSchema = PaginationSchema.extend({
 // ─── Renewal ──────────────────────────────────────────────────────────────────
 export const CreateRenewalSchema = CreateInstrumentBaseSchema.extend({
   predecessorInstrumentId: z.string().cuid(),
+  version: z.number().int().positive(),
 })
   .refine((data) => new Date(data.issueDate) <= new Date(data.maturityDate), {
     message: 'Issue date cannot be after maturity date',
@@ -256,7 +273,7 @@ export const ResubmitTransitionSchema = z.object({
 
 export const CloseTransitionSchema = z.object({
   version: z.number().int().positive(),
-  reason: z.string().min(1, 'Closure reason is required').max(2000),
+  reason: z.string().trim().min(1, 'Closure reason is required').max(2000),
 });
 
 // Release request transitions
