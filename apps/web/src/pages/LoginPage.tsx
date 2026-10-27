@@ -38,11 +38,6 @@ export const LoginPage: React.FC = () => {
           <p className="text-sm text-slate-600">
             Security Deposit & FDR Management
           </p>
-          {isDemoMode && (
-            <p className="text-xs text-amber-800">
-              Demo environment — synthetic data
-            </p>
-          )}
         </div>
         <form
           onSubmit={handleSubmit}
@@ -104,10 +99,6 @@ export const LoginPage: React.FC = () => {
             </p>
           )}
         </form>
-        <p className="text-xs text-slate-500 text-center">
-          Prototype for AICTE problem statement 26265. No live bank or AICTE
-          integration.
-        </p>
       </section>
     </main>
   );

@@ -253,20 +253,12 @@ textarea {
   top: 8px;
 }
 .environment-banner {
-  height: 30px;
-  padding: 7px 20px;
-  font-size: 10px;
-  line-height: 16px;
-  color: #754526;
-  background: #fff4e9;
-  border-bottom: 1px solid #f7e6d8;
-  position: relative;
-  z-index: 40;
+  display: none;
 }
 .desktop-sidebar {
   display: none;
   position: fixed;
-  top: 30px;
+  top: 0;
   bottom: 0;
   left: 0;
   width: 232px;
@@ -327,7 +319,7 @@ textarea {
   color: #d75a1a;
 }
 .workspace-content {
-  min-height: calc(100vh - 30px);
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }

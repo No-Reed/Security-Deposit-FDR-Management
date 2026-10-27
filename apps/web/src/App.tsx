@@ -16,7 +16,6 @@ import { InstitutionsPage } from './pages/InstitutionsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditTrailPage } from './pages/AuditTrailPage';
 import { AdminPage } from './pages/AdminPage';
-import { AboutPage } from './pages/AboutPage';
 import { LoginPage } from './pages/LoginPage';
 function Protected({
   children,
@@ -69,7 +68,6 @@ export default function App() {
     ['/reports', <ReportsPage />, undefined],
     ['/audit', <AuditTrailPage />, staff],
     ['/admin', <AdminPage />, ['SYSTEM_ADMIN']],
-    ['/about', <AboutPage />, undefined],
   ] as Array<[string, React.ReactNode, string[] | undefined]>;
   return (
     <AuthProvider>

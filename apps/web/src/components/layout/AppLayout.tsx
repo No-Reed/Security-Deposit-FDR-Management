@@ -13,7 +13,6 @@ import {
   BarChart3,
   History,
   Settings,
-  Info,
   Search,
   Menu,
   X,
@@ -72,7 +71,6 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({
     { label: 'Reports', path: '/reports', icon: BarChart3, show: true },
     { label: 'Audit trail', path: '/audit', icon: History, show: staff },
     { label: 'Administration', path: '/admin', icon: Settings, show: admin },
-    { label: 'About this prototype', path: '/about', icon: Info, show: true },
   ];
   useEffect(() => {
     let current = true;
@@ -167,15 +165,6 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <div className="environment-banner">
-        {isDemoMode
-          ? 'Demo environment — synthetic data'
-          : 'DepositDesk workspace'}
-        <span className="hidden sm:inline">
-          {' '}
-          · No live bank or AICTE integration
-        </span>
-      </div>
       <aside className="desktop-sidebar">{menu}</aside>
       <dialog ref={dialog} className="mobile-navigation">
         <button
@@ -229,13 +218,6 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({
               <Bell size={18} />
               {unread > 0 && <span className="notification-dot" />}
             </Link>
-            <Link
-              to="/about"
-              className="hidden sm:block text-slate-400"
-              aria-label="Project information"
-            >
-              <Info size={18} />
-            </Link>
             <span className="avatar hidden sm:flex" title={user?.name}>
               {user?.name.slice(0, 1)}
             </span>
@@ -253,8 +235,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({
           {children}
         </main>
         <footer className="workspace-footer">
-          DepositDesk · AICTE problem statement 26265 · Prototype{' '}
-          <Link to="/about">Disclosures & limitations</Link>
+          DepositDesk · Security Deposit &amp; FDR Management
         </footer>
       </div>
     </div>
