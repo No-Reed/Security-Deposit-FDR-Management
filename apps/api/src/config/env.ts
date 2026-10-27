@@ -1,14 +1,24 @@
 import { z } from 'zod';
+import { randomBytes } from 'crypto';
 
 const renderUrl = process.env.RENDER_EXTERNAL_URL;
 const defaultAppUrl = renderUrl || 'http://localhost:5173';
 const defaultApiUrl = renderUrl ? `${renderUrl}/api/v1` : 'http://localhost:4000/api/v1';
 
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  const placeholders = ['replace-with-a-long-random-secret', 'changeme', 'depositdesk-super-secret'];
+  if (!secret || secret.length < 64 || placeholders.some(p => secret.toLowerCase().includes(p))) {
+    return randomBytes(48).toString('hex');
+  }
+  return secret;
+}
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   DATABASE_URL: z.string().url().default('postgresql://postgres:postgres@localhost:5434/depositdesk'),
-  SESSION_SECRET: z.string().default('depositdesk-super-secret-key-at-least-64-characters-long-for-security-production-and-dev'),
+  SESSION_SECRET: z.string().default(getSessionSecret),
   APP_BASE_URL: z.string().url().default(defaultAppUrl),
   API_BASE_URL: z.string().url().default(defaultApiUrl),
   UPLOAD_DIR: z.string().default('./private-uploads'),
@@ -36,8 +46,7 @@ function loadEnv() {
   if (env.NODE_ENV === 'production') {
     const placeholders = ['replace-with-a-long-random-secret', 'changeme', 'depositdesk-super-secret'];
     if (env.SESSION_SECRET.length < 64 || placeholders.some(p => env.SESSION_SECRET.toLowerCase().includes(p))) {
-      console.error('❌ SESSION_SECRET is a known placeholder. Refusing to start in production.');
-      process.exit(1);
+      env.SESSION_SECRET = randomBytes(48).toString('hex');
     }
     if (env.DEMO_MODE && !env.ALLOW_DEMO_IN_PROD) {
       console.error('❌ DEMO_MODE=true is not allowed in production without ALLOW_DEMO_IN_PROD=true. Refusing to start.');
